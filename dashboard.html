@@ -57,6 +57,27 @@
       overflow: hidden;
       margin: 10px auto;
     }
+    .toast {
+      position: fixed;
+      bottom: 30px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #323232;
+      color: white;
+      padding: 14px 24px;
+      border-radius: 8px;
+      font-size: 16px;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s ease;
+      z-index: 9999;
+    }
+    .toast.show {
+      opacity: 1;
+      pointer-events: auto;
+    }
+    .toast.success { background: #27ae60; }
+    .toast.error { background: #c0392b; }
   </style>
 </head>
 <body>
@@ -71,7 +92,6 @@
   <div class="card" onclick="mostrarSeccion('inventario')">📦 Inventario</div>
 </div>
 
-<!-- Sección Agregar -->
 <div id="agregar" class="section">
   <h2>Agregar nuevo producto</h2>
   <input id="nombre" placeholder="Nombre del producto">
@@ -80,15 +100,12 @@
   <input id="stock" type="number" placeholder="Cantidad">
   <input id="categoria" placeholder="Categoría">
   <input id="codigoproducto" placeholder="Código de producto">
-
   <div id="scanner" class="scanner-container"></div>
   <button onclick="iniciarScanner()" id="btn-escanear">📷 Escanear código de barras</button>
   <button onclick="detenerScanner()" id="btn-cancelar" style="display:none; background:#555; color:white;">✖ Cancelar escaneo</button>
-
   <button onclick="agregarProducto()">Agregar</button>
 </div>
 
-<!-- Sección Venta -->
 <div id="venta" class="section">
   <h2>Productos disponibles</h2>
   <table>
@@ -97,12 +114,10 @@
   </table>
 </div>
 
-<!-- Sección Merma -->
 <div id="merma" class="section">
   <h2>Merma (próximamente)</h2>
 </div>
 
-<!-- Sección Inventario -->
 <div id="inventario" class="section">
   <h2>Inventario general</h2>
   <button onclick="exportarInventarioExcel()">📤 Exportar a Excel</button>
@@ -113,6 +128,7 @@
 </div>
 
 <button class="logout" onclick="cerrarSesion()">Cerrar sesión</button>
+<div id="toast" class="toast"></div>
 
 <script>
   const firebaseConfig = {
@@ -141,6 +157,15 @@
     if (id === "inventario") cargarInventario();
   }
 
+  function mostrarToast(mensaje, tipo = "success") {
+    const toast = document.getElementById("toast");
+    toast.textContent = mensaje;
+    toast.className = `toast show ${tipo}`;
+    setTimeout(() => {
+      toast.classList.remove("show");
+    }, 3000);
+  }
+
   async function agregarProducto() {
     const nombre = document.getElementById("nombre").value.trim();
     const precioNeto = parseFloat(document.getElementById("precioNeto").value);
@@ -149,14 +174,38 @@
     const categoria = document.getElementById("categoria").value.trim();
     const codigo = document.getElementById("codigoproducto").value.trim();
 
-    if (!nombre || isNaN(precioNeto) || isNaN(precioPublico) || isNaN(stock) || !categoria)
-      return alert("Completa todos los campos");
+    if (!nombre || isNaN(precioNeto) || isNaN(precioPublico) || isNaN(stock) || !categoria || !codigo) {
+      mostrarToast("⚠️ Completa todos los campos correctamente.", "error");
+      return;
+    }
 
-    await db.collection(`negocios/${negocioId}/productos`).add({
-      nombre, precioNeto, precioPublico, stock, categoria, codigo
-    });
+    try {
+      const existe = await db.collection(`negocios/${negocioId}/productos`)
+        .where("codigo", "==", codigo).get();
 
-    alert("Producto agregado");
+      if (!existe.empty) {
+        mostrarToast("🚫 Ya existe un producto con ese código de barras.", "error");
+        return;
+      }
+
+      await db.collection(`negocios/${negocioId}/productos`).add({
+        nombre, precioNeto, precioPublico, stock, categoria, codigo
+      });
+
+      mostrarToast("✅ Producto agregado exitosamente.", "success");
+
+      document.getElementById("nombre").value = "";
+      document.getElementById("precioNeto").value = "";
+      document.getElementById("precioPublico").value = "";
+      document.getElementById("stock").value = "";
+      document.getElementById("categoria").value = "";
+      document.getElementById("codigoproducto").value = "";
+      document.getElementById("nombre").focus();
+
+    } catch (error) {
+      console.error(error);
+      mostrarToast("❌ Error al guardar el producto.", "error");
+    }
   }
 
   async function cargarProductos() {
@@ -177,7 +226,10 @@
   }
 
   async function registrarVenta(id, stockActual) {
-    if (stockActual <= 0) return alert("Sin stock disponible");
+    if (stockActual <= 0) {
+      mostrarToast("🚫 Sin stock disponible.", "error");
+      return;
+    }
     await db.collection(`negocios/${negocioId}/productos`).doc(id).update({
       stock: stockActual - 1
     });
@@ -243,7 +295,7 @@
     }, err => {
       if (err) {
         console.error(err);
-        alert("No se pudo iniciar el escáner.");
+        mostrarToast("❌ No se pudo iniciar el escáner.", "error");
         return;
       }
       Quagga.start();

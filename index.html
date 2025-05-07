@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Inventario Móvil</title>
+  <link rel="manifest" href="manifest.json" />
+  <script src="main.js" defer></script>
+</head>
+<body>
+  <h1>Inventario Móvil</h1>
+  <form id="login-form">
+    <input id="username" placeholder="Usuario" required>
+    <input id="password" placeholder="Contraseña" type="password" required>
+    <button type="submit">Ingresar</button>
+    <div id="login-msg"></div>
+  </form>
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/service-worker.js')
+        .then(() => console.log("SW registrado"))
+        .catch(err => console.error("SW error", err));
+    }
+  </script>
+</body>
+</html>

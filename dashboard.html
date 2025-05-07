@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Dashboard</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #f0f2f5;
+      padding: 30px;
+    }
+    .logout {
+      margin-top: 20px;
+      color: red;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <h1>Bienvenido al Dashboard</h1>
+  <p id="usuario-info"></p>
+  <button class="logout" onclick="cerrarSesion()">Cerrar sesión</button>
+
+  <script>
+    const usuario = JSON.parse(localStorage.getItem("usuario"));
+    if (!usuario) {
+      // Redirige si no hay sesión
+      window.location.href = "index.html";
+    } else {
+      document.getElementById("usuario-info").textContent =
+        "Usuario: " + usuario.username;
+    }
+
+    function cerrarSesion() {
+      localStorage.removeItem("usuario");
+      window.location.href = "index.html";
+    }
+  </script>
+</body>
+</html>

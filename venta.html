@@ -297,36 +297,50 @@ async function confirmarVenta() {
 
 
     // ——— 9) Cerrar Caja ———
-    async function cerrarCaja() {
-      if (!confirm("¿Confirma cerrar la caja y registrar resumen?")) return;
-      const ventasSnap = await db
-        .collection(`negocios/${negocioId}/ventas`)
-        .where("fecha", ">=", lastCierreDate)
-        .get();
-      let totalDia = 0;
-      const ventasUsuario = {};
-      ventasSnap.forEach(doc => {
-        const v = doc.data();
-        const u = v.usuario || "Desconocido";
-        totalDia += v.total || 0;
-        if (!ventasUsuario[u]) ventasUsuario[u] = { count:0, total:0 };
-        ventasUsuario[u].count++;
-        ventasUsuario[u].total += v.total || 0;
-      });
-      try {
-        await db.collection(`negocios/${negocioId}/cierresCaja`).add({
-          fecha:            firebase.firestore.FieldValue.serverTimestamp(),
-          usuario:          usuario.username,
-          totalDia:         parseFloat(totalDia.toFixed(2)),
-          ventasPorUsuario: ventasUsuario
-        });
-        alert("✅ Caja cerrada correctamente");
-        lastCierreDate = firebase.firestore.Timestamp.now();
-        localStorage.setItem('lastCierreDate', lastCierreDate.toMillis());
-      } catch {
-        alert("❌ Error al cerrar la caja");
-      }
-    }
+// ——— 9) Cerrar Caja ———
+// ——— 9) Cerrar Caja ———
+async function cerrarCaja() {
+  if (!confirm("¿Confirma cerrar la caja y registrar resumen?")) return;
+
+  // 9.1) Recuperar ventas desde el último cierre
+  const ventasSnap = await db
+    .collection(`negocios/${negocioId}/ventas`)
+    .where("fecha", ">=", lastCierreDate)
+    .get();
+  let totalDia = 0;
+  const ventasUsuario = {};
+  ventasSnap.forEach(doc => {
+    const v = doc.data();
+    const u = v.usuario || "Desconocido";
+    totalDia += v.total || 0;
+    if (!ventasUsuario[u]) ventasUsuario[u] = { count: 0, total: 0 };
+    ventasUsuario[u].count++;
+    ventasUsuario[u].total += v.total || 0;
+  });
+
+  try {
+    // 9.2) Guardar el cierre en Firestore
+    await db.collection(`negocios/${negocioId}/cierresCaja`).add({
+      fecha:            firebase.firestore.FieldValue.serverTimestamp(),
+      usuario:          usuario.username,
+      totalDia:         parseFloat(totalDia.toFixed(2)),
+      ventasPorUsuario: ventasUsuario
+    });
+
+    // 9.3) Notificar al usuario incluyendo el total vendido
+    alert(`✅ Caja cerrada correctamente.\nTotal vendido: $${totalDia.toFixed(2)}`);
+
+    // 9.4) Actualizar lastCierreDate
+    lastCierreDate = firebase.firestore.Timestamp.now();
+    localStorage.setItem('lastCierreDate', lastCierreDate.toMillis());
+
+  } catch (err) {
+    console.error(err);
+    alert("❌ Error al cerrar la caja");
+  }
+}
+
+
 
     // ——— 10) Filtro de búsqueda ———
     document.getElementById("busqueda")

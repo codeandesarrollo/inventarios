@@ -1,3 +1,4 @@
+<!-- index.html (corregido) -->
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -7,7 +8,7 @@
   <title>Inventario Móvil</title>
 
   <!-- PWA Manifest -->
-  <link rel="manifest" href="manifest.json" />
+  <link rel="manifest" href="./manifest.json" />
 
   <!-- Firebase SDKs (compat) -->
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
@@ -70,9 +71,11 @@
   <!-- Registro del Service Worker -->
   <script>
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/service-worker.js')
-        .then(() => console.log("✅ SW registrado"))
-        .catch(err => console.error("❌ Error SW:", err));
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./service-worker.js')
+          .then(reg => console.log('✅ SW registrado:', reg.scope))
+          .catch(err => console.error('❌ Error al registrar SW:', err));
+      });
     }
   </script>
 

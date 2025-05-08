@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Reporte de Ventas</title>
+  <!-- Firebase -->
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+  <!-- SheetJS para Excel -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <style>
+    body { font-family:'Segoe UI'; margin:0; padding:20px; background:#f4f6f9; }
+    h1,h2 { text-align:center; margin-top:0; }
+    #usuario-info { text-align:center; font-weight:bold; }
+    #cierre-info { text-align:center; font-style:italic; margin-bottom:20px; }
+
+    .actions { text-align:center; margin-bottom:20px; }
+    .actions button, .actions a {
+      padding:10px 20px;
+      font-size:16px;
+      margin:0 10px;
+      border:none;
+      border-radius:6px;
+      cursor:pointer;
+      text-decoration:none;
+    }
+    .export-btn { background:#27ae60; color:#fff; }
+    .logout     { background:#c0392b; color:#fff; }
+    .back-btn a { background:#2980b9; color:#fff; }
+
+    /* Cuadros de Ganancias */
+    .ganancias-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit,minmax(250px,1fr));
+      gap: 20px;
+      margin-bottom: 30px;
+    }
+    .ganancia-card {
+      background: #fff;
+      padding: 15px;
+      border-radius: 8px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+      text-align: center;
+    }
+    .ganancia-card h3 { margin-top: 0; }
+  </style>
+</head>
+<body>
+
+  <h1>Reporte de Ventas</h1>
+  <p id="usuario-info"></p>
+  <p id="cierre-info">Cargando fecha de último cierre...</p>
+
+  <div class="actions">
+    <button class="export-btn" onclick="exportExcel()">📥 Exportar Resumen a Excel</button>
+  
+  </div>
+
+  <h2>Resumen de Ganancias</h2>
+  <div class="ganancias-grid">
+    <div class="ganancia-card">
+      <h3>Hoy</h3>
+      <p>Ingresos: <strong id="dia-ingresos">$0.00</strong></p>
+      <p>Costo Ventas: <strong id="dia-costo">$0.00</strong></p>
+      <p>Costo Mermas: <strong id="dia-mermas">$0.00</strong></p>
+      <p>Ganancia: <strong id="dia-ganancia">$0.00</strong></p>
+    </div>
+    <div class="ganancia-card">
+      <h3>Esta Semana</h3>
+      <p>Ingresos: <strong id="semana-ingresos">$0.00</strong></p>
+      <p>Costo Ventas: <strong id="semana-costo">$0.00</strong></p>
+      <p>Costo Mermas: <strong id="semana-mermas">$0.00</strong></p>
+      <p>Ganancia: <strong id="semana-ganancia">$0.00</strong></p>
+    </div>
+  </div>
+
+  <div style="text-align:center; margin-top:20px;">
+    <a href="dashboard.html" style="
+      display:inline-block;
+      padding:10px 20px;
+      background:#2980b9;
+      color:white;
+      border-radius:6px;
+      text-decoration:none;
+      font-weight:bold;
+    ">
+      ⬅ Volver al Dashboard
+    </a>
+  </div>
+
+  <script>
+    // —– 1) Sesión —–
+    const usuario   = JSON.parse(localStorage.getItem("usuario"));
+    const negocioId = localStorage.getItem("negocioId");
+    if (!usuario || !negocioId) location.href = "index.html";
+    document.getElementById("usuario-info").textContent = `Usuario: ${usuario.username}`;
+
+    // —– 2) Firebase —–
+    firebase.initializeApp({
+      apiKey:    "AIzaSyAhsavAS72wIk1X-q-aukHeyK-GpAWXVl4",
+      authDomain:"appinventario-fab49.firebaseapp.com",
+      projectId: "appinventario-fab49"
+    });
+    const db = firebase.firestore();
+    db.enablePersistence({ synchronizeTabs: true }).catch(()=>{});
+
+    // —– 3) Último Cierre —–
+    let lastCierreDate = null;
+    function fmtDate(ts) {
+      return ts.toDate().toLocaleString();
+    }
+    async function cargarUltimoCierre() {
+      const snap = await db.collection(`negocios/${negocioId}/cierresCaja`)
+                           .orderBy("fecha","desc").limit(1).get();
+      if (!snap.empty) {
+        const d = snap.docs[0].data();
+        lastCierreDate = d.fecha;
+        document.getElementById("cierre-info").textContent =
+          `Último cierre: ${fmtDate(d.fecha)}`;
+      } else {
+        const hoy = new Date(); hoy.setHours(0,0,0,0);
+        lastCierreDate = firebase.firestore.Timestamp.fromDate(hoy);
+        document.getElementById("cierre-info").textContent =
+          `Sin cierres → desde ${hoy.toLocaleString()}`;
+      }
+    }
+
+    // —– 4) Bounds de periodo —–
+    function boundsPeriodo(rango) {
+      const now = new Date();
+      let start = new Date(now), end = new Date(now);
+      start.setHours(0,0,0,0);
+      if (rango === 'semana') {
+        const dia = now.getDay();
+        const delta = (dia + 6) % 7;
+        start.setDate(now.getDate() - delta);
+      }
+      end = new Date(start);
+      end.setDate(start.getDate() + (rango==='dia'?1:7));
+      return {
+        desde: firebase.firestore.Timestamp.fromDate(start),
+        hasta: firebase.firestore.Timestamp.fromDate(end)
+      };
+    }
+
+    // —– 5) Calcular Ganancias —–
+    async function calcularGanancias(rango) {
+      const { desde, hasta } = boundsPeriodo(rango);
+      let ingresos=0, costoVentas=0, costoMermas=0;
+
+      // Ventas
+      const vSnap = await db.collection(`negocios/${negocioId}/ventas`)
+        .where('fecha','>=',desde)
+        .where('fecha','<', hasta)
+        .get();
+      vSnap.forEach(doc => {
+        const v = doc.data();
+        ingresos += v.total || 0;
+        (v.productos||[]).forEach(p => {
+          costoVentas += (p.precioNeto||0) * p.cantidad;
+        });
+      });
+
+      // Mermas
+      const mSnap = await db.collection(`negocios/${negocioId}/mermas`)
+        .where('fecha','>=',desde)
+        .where('fecha','<', hasta)
+        .get();
+      mSnap.forEach(doc => {
+        const m = doc.data();
+        costoMermas += (m.precioNeto||0) * (m.cantidad||0);
+      });
+
+      const gan = ingresos - costoVentas - costoMermas;
+      document.getElementById(`${rango}-ingresos`).textContent  = `$${ingresos.toFixed(2)}`;
+      document.getElementById(`${rango}-costo`).textContent     = `$${costoVentas.toFixed(2)}`;
+      document.getElementById(`${rango}-mermas`).textContent   = `$${costoMermas.toFixed(2)}`;
+      document.getElementById(`${rango}-ganancia`).textContent = `$${gan.toFixed(2)}`;
+    }
+
+    // —– 6) Exportar Resumen —–
+    function exportExcel() {
+      const wb = XLSX.utils.book_new();
+
+      // Solo una hoja de Resumen de Ganancias
+      const datos = [
+        ['Periodo','Ingresos','Costo Ventas','Costo Mermas','Ganancia'],
+        ['Hoy',
+          document.getElementById('dia-ingresos').textContent.slice(1),
+          document.getElementById('dia-costo').textContent.slice(1),
+          document.getElementById('dia-mermas').textContent.slice(1),
+          document.getElementById('dia-ganancia').textContent.slice(1)
+        ],
+        ['Semana',
+          document.getElementById('semana-ingresos').textContent.slice(1),
+          document.getElementById('semana-costo').textContent.slice(1),
+          document.getElementById('semana-mermas').textContent.slice(1),
+          document.getElementById('semana-ganancia').textContent.slice(1)
+        ]
+      ];
+      const ws = XLSX.utils.aoa_to_sheet(datos);
+      XLSX.utils.book_append_sheet(wb, ws, 'Ganancias');
+
+      XLSX.writeFile(wb, `ResumenGanancias_${new Date().toISOString().slice(0,10)}.xlsx`);
+    }
+
+    function cerrarSesion(){
+      localStorage.clear();
+      location.href="index.html";
+    }
+
+    // —– 7) Init —–
+    async function init() {
+      await cargarUltimoCierre();
+      await calcularGanancias('dia');
+      await calcularGanancias('semana');
+    }
+    init();
+  </script>
+</body>
+</html>

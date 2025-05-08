@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Promociones</title>
+
+  <!-- Firebase SDKs -->
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+
+  <style>
+    body { font-family:'Segoe UI', sans-serif; margin:0; padding:20px; background:#f4f6f9; }
+    h1 { text-align:center; margin-top:0; }
+    .form-group { margin-bottom:15px; }
+    label { display:block; margin-bottom:5px; font-weight:bold; }
+    select, input[type='number'] {
+      width:100%; padding:8px; font-size:16px; border:1px solid #ccc; border-radius:4px;
+    }
+    button {
+      display:inline-block; padding:10px 20px; background:#27ae60; color:#fff;
+      border:none; border-radius:6px; font-size:16px; cursor:pointer;
+    }
+    table {
+      width:100%; border-collapse:collapse; margin-top:20px;
+      background:#fff; box-shadow:0 2px 6px rgba(0,0,0,0.1);
+    }
+    th, td { padding:10px; border:1px solid #ccc; text-align:center; }
+    th { background:#e1e5ea; }
+    .toast {
+      position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%);
+      background: #323232; color: white; padding:14px 24px; border-radius:8px;
+      font-size:16px; opacity: 0; pointer-events: none; transition: opacity 0.3s;
+      z-index: 9999;
+    }
+    .toast.show { opacity:1; pointer-events:auto; }
+    .toast.success { background:#27ae60; }
+    .toast.error   { background:#c0392b; }
+  </style>
+</head>
+<body>
+
+  <h1>Promociones</h1>
+
+  <div class="form-group">
+    <label for="producto-select">Producto:</label>
+    <select id="producto-select"></select>
+  </div>
+  <div class="form-group">
+    <label for="promo-cantidad">Cantidad mínima:</label>
+    <input type="number" id="promo-cantidad" min="1" value="1">
+  </div>
+  <div class="form-group">
+    <label for="promo-precio">Precio promocional:</label>
+    <input type="number" id="promo-precio" step="0.01" value="0.00">
+  </div>
+  <button onclick="agregarPromocion()">➕ Agregar Promoción</button>
+
+  <table id="tabla-promociones">
+    <thead>
+      <tr><th>Cantidad Mínima</th><th>Precio Promo</th><th>Acciones</th></tr>
+    </thead>
+    <tbody id="body-promociones">
+      <tr><td colspan="3">Seleccione un producto...</td></tr>
+    </tbody>
+  </table>
+
+  <div id="toast" class="toast"></div>
+  <div style="text-align:center; margin-top:20px;">
+    <a href="dashboard.html" style="
+      display:inline-block;
+      padding:10px 20px;
+      background:#2980b9;
+      color:white;
+      border-radius:6px;
+      text-decoration:none;
+      font-weight:bold;
+    ">
+      ⬅ Volver al Dashboard
+    </a>
+  </div>
+  <script>
+    // Leer sesión
+    const usuario   = JSON.parse(localStorage.getItem("usuario"));
+    const negocioId = localStorage.getItem("negocioId");
+    if (!usuario || !negocioId) location.href = "index.html";
+
+    // Inicializar Firebase
+    firebase.initializeApp({
+      apiKey: "AIzaSyAhsavAS72wIk1X-q-aukHeyK-GpAWXVl4",
+      authDomain: "appinventario-fab49.firebaseapp.com",
+      projectId: "appinventario-fab49"
+    });
+    const db = firebase.firestore();
+    db.enablePersistence({ synchronizeTabs: true }).catch(()=>{});
+
+    const selectProd = document.getElementById('producto-select');
+    const bodyPromo  = document.getElementById('body-promociones');
+
+    // Toast
+    function mostrarToast(msg, tipo = 'success') {
+      const t = document.getElementById('toast');
+      t.textContent = msg;
+      t.className = `toast show ${tipo}`;
+      setTimeout(() => t.className = 'toast', 3000);
+    }
+
+    // Cargar lista de productos
+    async function cargarProductos() {
+      const snap = await db.collection(`negocios/${negocioId}/productos`).get();
+      selectProd.innerHTML = '<option value="" disabled selected>-- Selecciona --</option>';
+      snap.forEach(doc => {
+        const p = doc.data();
+        selectProd.innerHTML += 
+          `<option value="${doc.id}">${p.nombre} ($${p.precioPublico})</option>`;
+      });
+      selectProd.addEventListener('change', () => cargarPromociones(selectProd.value));
+    }
+
+    // Cargar promociones para un producto
+    async function cargarPromociones(productId) {
+      if (!productId) return;
+      const snap = await db.collection(`negocios/${negocioId}/productos/${productId}/promociones`)
+                          .orderBy('cantidadMinima','asc')
+                          .get();
+      if (snap.empty) {
+        bodyPromo.innerHTML = '<tr><td colspan="3">Sin promociones.</td></tr>';
+        return;
+      }
+      bodyPromo.innerHTML = '';
+      snap.forEach(doc => {
+        const pr = doc.data();
+        bodyPromo.innerHTML += 
+          `<tr>
+             <td>${pr.cantidadMinima}</td>
+             <td>$${pr.precioPromocional.toFixed(2)}</td>
+             <td><button onclick="eliminarPromocion('${productId}','${doc.id}')">🗑</button></td>
+           </tr>`;
+      });
+    }
+
+    // Agregar nueva promoción
+    async function agregarPromocion() {
+      const productId = selectProd.value;
+      const cantidad   = parseInt(document.getElementById('promo-cantidad').value, 10);
+      const precio     = parseFloat(document.getElementById('promo-precio').value);
+      if (!productId)       return mostrarToast('Selecciona un producto.', 'error');
+      if (isNaN(cantidad) || cantidad < 1)
+        return mostrarToast('Cantidad mínima inválida.', 'error');
+      if (isNaN(precio) || precio <= 0)
+        return mostrarToast('Precio promocional inválido.', 'error');
+
+      try {
+        await db.collection(`negocios/${negocioId}/productos/${productId}/promociones`).add({
+          cantidadMinima: cantidad,
+          precioPromocional: precio,
+          fechaCreacion: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        mostrarToast('Promoción agregada.');
+        cargarPromociones(productId);
+      } catch (err) {
+        console.error(err);
+        mostrarToast('Error al agregar.', 'error');
+      }
+    }
+
+    // Eliminar promoción
+    async function eliminarPromocion(productId, promoId) {
+      if (!confirm('¿Eliminar esta promoción?')) return;
+      try {
+        await db.doc(`negocios/${negocioId}/productos/${productId}/promociones/${promoId}`).delete();
+        mostrarToast('Promoción eliminada.');
+        cargarPromociones(productId);
+      } catch (err) {
+        console.error(err);
+        mostrarToast('Error al eliminar.', 'error');
+      }
+    }
+
+    // Inicializar
+    cargarProductos();
+  </script>
+</body>
+</html>

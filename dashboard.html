@@ -32,18 +32,38 @@
       padding: 20px;
       text-align: center;
       cursor: pointer;
+      text-decoration: none;
+      color: inherit;
+      transition: opacity 0.2s;
+    }
+    .card.disabled {
+      pointer-events: none;
+      opacity: 0.5;
+      cursor: default;
     }
     .logout {
-      margin-top: 20px; background-color: #c0392b; color: white;
-      border: none; padding: 10px 16px; border-radius: 6px;
+      margin-top: 20px;
+      background-color: #c0392b;
+      color: white;
+      border: none;
+      padding: 10px 16px;
+      border-radius: 6px;
       cursor: pointer;
     }
     .toast {
-      position: fixed; bottom: 30px; left: 50%;
-      transform: translateX(-50%); background: #323232;
-      color: white; padding: 14px 24px; border-radius: 8px;
-      font-size: 16px; opacity: 0; pointer-events: none;
-      transition: opacity 0.3s ease; z-index: 9999;
+      position: fixed;
+      bottom: 30px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #323232;
+      color: white;
+      padding: 14px 24px;
+      border-radius: 8px;
+      font-size: 16px;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s ease;
+      z-index: 9999;
     }
     .toast.show { opacity: 1; pointer-events: auto; }
     .toast.success { background: #27ae60; }
@@ -55,7 +75,7 @@
   <h1>Panel del negocio</h1>
   <p id="usuario-info"></p>
 
-  <div class="card-grid">
+  <div class="card-grid" id="cards">
     <a class="card" href="agregaproductos.html">➕ Agregar Productos</a>
     <a class="card" href="venta.html">🛒 Realizar Venta</a>
     <a class="card" href="registromerma.html">⚠️ Registrar Merma</a>
@@ -69,39 +89,65 @@
   <div id="toast" class="toast"></div>
 
   <script>
-    // 1) Leer sesión
-    const usuario      = JSON.parse(localStorage.getItem("usuario"));
-    const negocioId    = localStorage.getItem("negocioId");
-    const negocioNombre= localStorage.getItem("nombreNegocio");
-    if (!usuario || !negocioId) {
-      return window.location.href = "index.html";
-    }
-    document.getElementById("usuario-info").textContent =
-      `Usuario: ${usuario.username} | Negocio: ${negocioNombre}`;
+    window.addEventListener('DOMContentLoaded', async () => {
+      // 1) Leer sesión
+      const usuario   = JSON.parse(localStorage.getItem("usuario"));
+      const negocioId = localStorage.getItem("negocioId");
+      const nombreNeg = localStorage.getItem("nombreNegocio");
+      if (!usuario || !negocioId) {
+        window.location.href = "index.html";
+        return;
+      }
+      document.getElementById("usuario-info")
+        .textContent = `Usuario: ${usuario.username} | Negocio: ${nombreNeg}`;
 
-    // 2) Firebase
-    const firebaseConfig = {
-      apiKey: "AIzaSyAhsavAS72wIk1X-q-aukHeyK-GpAWXVl4",
-      authDomain: "appinventario-fab49.firebaseapp.com",
-      projectId: "appinventario-fab49"
-    };
-    firebase.initializeApp(firebaseConfig);
-    firebase.firestore().enablePersistence({ synchronizeTabs: true }).catch(()=>{});
-    const db = firebase.firestore();
+      // 2) Inicializar Firebase
+      firebase.initializeApp({
+        apiKey:    "AIzaSyAhsavAS72wIk1X-q-aukHeyK-GpAWXVl4",
+        authDomain:"appinventario-fab49.firebaseapp.com",
+        projectId: "appinventario-fab49"
+      });
+      const db = firebase.firestore();
+      db.enablePersistence({ synchronizeTabs: true }).catch(()=>{});
 
-    // 3) Logout
-    function cerrarSesion(){
-      localStorage.clear();
-      window.location.href = "index.html";
-    }
+      // 3) Consultar rol en Firestore (campo esadmin: "1" o "0")
+      let isAdmin = false;
+      try {
+        const usuarioSnap = await db
+          .collection(`negocios/${negocioId}/usuarios`)
+          .where('username', '==', usuario.username)
+          .limit(1)
+          .get();
+        if (!usuarioSnap.empty) {
+          const data = usuarioSnap.docs[0].data();
+          isAdmin = data.esadmin === "1";
+        }
+      } catch (err) {
+        console.error("Error leyendo rol de usuario:", err);
+      }
 
-    // 4) Toast helper (por si quieres usarlo aquí)
-    function mostrarToast(msg, tipo="success"){
-      const t = document.getElementById("toast");
-      t.textContent = msg;
-      t.className = `toast show ${tipo}`;
-      setTimeout(()=> t.className="toast", 3000);
-    }
+      // 4) Deshabilitar tarjetas para usuario normal
+      document.querySelectorAll('#cards .card').forEach(card => {
+        const href = card.getAttribute('href');
+        if (!isAdmin && href !== 'venta.html') {
+          card.classList.add('disabled');
+        }
+      });
+
+      // 5) Definir cerrarSesion
+      window.cerrarSesion = () => {
+        localStorage.clear();
+        window.location.href = "index.html";
+      };
+
+      // 6) Toast helper (opcional)
+      window.mostrarToast = (msg, tipo="success") => {
+        const t = document.getElementById("toast");
+        t.textContent = msg;
+        t.className = `toast show ${tipo}`;
+        setTimeout(() => { t.className = "toast"; }, 3000);
+      };
+    });
   </script>
 </body>
 </html>

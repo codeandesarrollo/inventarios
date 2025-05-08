@@ -1,3 +1,4 @@
+<!-- inventarioPaginado.html -->
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -31,17 +32,21 @@
     }
     th { background:#e1e5ea; }
     button {
-      padding:6px 10px; font-size:14px; cursor:pointer; margin-right:4px;
+      padding:6px 10px; font-size:14px; cursor:pointer;
     }
-    .action-btn { background:#2980b9; color:white; border:none; border-radius:4px; }
+    .action-btn { background:#2980b9; color:white; border:none; border-radius:4px; margin-right:8px; }
     .delete-btn { background:#c0392b; color:white; border:none; border-radius:4px; }
-    .nav-btn { margin-top:12px; text-align:center; }
-    .nav-btn button { margin:0 6px; }
+    .nav-btn {
+      margin-top:20px;
+      text-align:center;
+    }
+    .nav-btn button { margin: 0 12px; }
     .back-btn {
       text-align:center; margin:20px 0;
     }
     .back-btn a {
-      text-decoration:none; color:#2980b9; font-weight:bold;
+      text-decoration:none; color:white; background:#2980b9;
+      padding:10px 20px; border-radius:6px; font-weight:bold;
     }
     .logout {
       display:block; margin:0 auto; padding:10px 20px;
@@ -87,26 +92,15 @@
     <tbody id="tabla-inventario"></tbody>
   </table>
 
-  <div style="text-align:center; margin-top:20px;">
-    <a href="dashboard.html" style="
-      display:inline-block;
-      padding:10px 20px;
-      background:#2980b9;
-      color:white;
-      border-radius:6px;
-      text-decoration:none;
-      font-weight:bold;
-    ">
-      ⬅ Volver al Dashboard
-    </a>
+  <div class="back-btn">
+    <a href="dashboard.html">⬅ Volver al Dashboard</a>
   </div>
 
   <button class="logout" onclick="cerrarSesion()">Cerrar sesión</button>
-
   <div id="toast" class="toast"></div>
 
   <script>
-    // Validar sesión
+    // ——— 1) Sesión ———
     const usuario   = JSON.parse(localStorage.getItem("usuario"));
     const negocioId = localStorage.getItem("negocioId");
     if (!usuario || !negocioId) {
@@ -116,17 +110,16 @@
         `Usuario: ${usuario.username}`;
     }
 
-    // Inicializar Firestore + persistencia
-    const firebaseConfig = {
-      apiKey: "AIzaSyAhsavAS72wIk1X-q-aukHeyK-GpAWXVl4",
-      authDomain: "appinventario-fab49.firebaseapp.com",
+    // ——— 2) Firebase + Offline Persistence ———
+    firebase.initializeApp({
+      apiKey:    "AIzaSyAhsavAS72wIk1X-q-aukHeyK-GpAWXVl4",
+      authDomain:"appinventario-fab49.firebaseapp.com",
       projectId: "appinventario-fab49"
-    };
-    firebase.initializeApp(firebaseConfig);
+    });
     const db = firebase.firestore();
-    db.enablePersistence({ synchronizeTabs: true }).catch(() => {});
+    db.enablePersistence({ synchronizeTabs: true }).catch(()=>{});
 
-    // Toast helper
+    // ——— 3) Toast helper ———
     function mostrarToast(msg, tipo="success") {
       const t = document.getElementById("toast");
       t.textContent = msg;
@@ -134,40 +127,31 @@
       setTimeout(()=> t.className="toast", 3000);
     }
 
-    // Paginación & búsqueda
+    // ——— 4) Paginación & búsqueda ———
     const pageSize = 20;
     let firstDoc = null, lastDoc = null;
     let currentSearch = "";
 
-    // Cargar página: dir=0 inicial, +1 siguiente, -1 anterior
     async function loadPage(dir=0) {
-      let q = db.collection(`negocios/${negocioId}/productos`).orderBy("nombre");
-      // búsqueda server-side
+      let q = db.collection(`negocios/${negocioId}/productos`)
+                .orderBy("nombre");
       if (currentSearch) {
         const end = currentSearch + "\uf8ff";
         q = q.startAt(currentSearch).endAt(end);
       }
-      if (dir > 0 && lastDoc) {
-        q = q.startAfter(lastDoc);
-      } else if (dir < 0 && firstDoc) {
-        q = q.endBefore(firstDoc).limitToLast(pageSize);
-      }
+      if (dir > 0 && lastDoc)       q = q.startAfter(lastDoc);
+      else if (dir < 0 && firstDoc) q = q.endBefore(firstDoc).limitToLast(pageSize);
       q = q.limit(pageSize);
+
       const snap = await q.get();
-      if (snap.empty) {
-        renderTabla([]);
-        return;
-      }
-      firstDoc = snap.docs[0];
-      lastDoc  = snap.docs[snap.docs.length -1];
+      firstDoc = snap.docs[0]    || firstDoc;
+      lastDoc  = snap.docs.at(-1) || lastDoc;
       renderTabla(snap.docs);
 
-      // habilitar botones
-      document.getElementById("prevBtn").disabled = !snap.docs.length || !snap.query._queryOptions.startAt;
+      document.getElementById("prevBtn").disabled = !firstDoc;
       document.getElementById("nextBtn").disabled = snap.docs.length < pageSize;
     }
 
-    // Render tabla con documentos
     function renderTabla(docs) {
       const tbody = document.getElementById("tabla-inventario");
       tbody.innerHTML = "";
@@ -181,60 +165,63 @@
           <td>$${p.precioPublico}</td>
           <td>${p.stock}</td>
           <td>
-            <button class="action-btn" onclick="editarProducto('${doc.id}')">✏️</button>
+            <button class="action-btn" onclick="editarProducto('${doc.id}', ${p.stock})">✏️</button>
             <button class="delete-btn" onclick="eliminarProducto('${doc.id}')">🗑️</button>
           </td>`;
         tbody.appendChild(tr);
       });
     }
 
-    // Búsqueda
-    document.getElementById("busquedaInv").addEventListener("input", e => {
-      currentSearch = e.target.value.trim().toLowerCase();
-      firstDoc = lastDoc = null;
-      loadPage(0);
-    });
-
-    // Navegación
-    document.getElementById("nextBtn").onclick = () => loadPage(+1);
+    document.getElementById("busquedaInv")
+      .addEventListener("input", e => {
+        currentSearch = e.target.value.trim().toLowerCase();
+        firstDoc = lastDoc = null;
+        loadPage(0);
+      });
+    document.getElementById("nextBtn").onclick = () => loadPage(1);
     document.getElementById("prevBtn").onclick = () => loadPage(-1);
 
-    // Editar producto
-    async function editarProducto(id) {
-      // Obtener datos actuales
-      const doc = await db.collection(`negocios/${negocioId}/productos`).doc(id).get();
-      const p = doc.data();
-      const nombre    = prompt("Nombre:", p.nombre) || p.nombre;
-      const categoria = prompt("Categoría:", p.categoria || "") || p.categoria;
-      const precioN   = parseFloat(prompt("Precio Neto:", p.precioNeto))  || p.precioNeto;
-      const precioP   = parseFloat(prompt("Precio Público:", p.precioPublico)) || p.precioPublico;
-      const stock     = parseInt(prompt("Stock:", p.stock),10) || p.stock;
+    // ——— 5) Editar producto (offline + sync) ———
+    async function editarProducto(id, actualStock) {
+      // Pide delta de stock en lugar de stock completo
+      const delta = parseInt(
+        prompt(
+          `Stock actual: ${actualStock}\n` +
+          "Ingresa un número (positivo para agregar, negativo para quitar):",
+          "0"
+        ),
+        10
+      );
+      if (isNaN(delta) || delta === 0) return;
+
       try {
-        await db.collection(`negocios/${negocioId}/productos`).doc(id).update({
-          nombre, categoria, precioNeto: precioN, precioPublico: precioP, stock
-        });
-        mostrarToast("✔️ Producto actualizado");
+        // Usa FieldValue.increment para operaciones atómicas y offline
+        await db.collection(`negocios/${negocioId}/productos`)
+                .doc(id)
+                .update({
+                  stock: firebase.firestore.FieldValue.increment(delta)
+                });
+        mostrarToast(`✔️ Stock ajustado (${delta > 0 ? "+" : ""}${delta})`);
         loadPage(0);
-      } catch(err) {
+      } catch (err) {
         console.error(err);
-        mostrarToast("❌ Error al actualizar", "error");
+        mostrarToast("❌ Error al ajustar stock", "error");
       }
     }
 
-    // Eliminar producto
+    // ——— 6) Eliminar producto ———
     async function eliminarProducto(id) {
       if (!confirm("¿Eliminar este producto?")) return;
       try {
         await db.collection(`negocios/${negocioId}/productos`).doc(id).delete();
         mostrarToast("🗑️ Producto eliminado");
         loadPage(0);
-      } catch(err) {
-        console.error(err);
+      } catch {
         mostrarToast("❌ Error al eliminar", "error");
       }
     }
 
-    // Exportar a Excel
+    // ——— 7) Exportar a Excel ———
     async function exportarExcel() {
       const snap = await db.collection(`negocios/${negocioId}/productos`)
                            .orderBy("nombre").get();
@@ -249,14 +236,21 @@
       XLSX.writeFile(wb, "Inventario.xlsx");
     }
 
-    // Cerrar sesión
+    // ——— 8) Cerrar sesión ———
     function cerrarSesion() {
       localStorage.clear();
       window.location.href = "index.html";
     }
 
-    // Carga inicial
+    // ——— 9) Carga inicial y SW ———
     loadPage(0);
+
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/service-worker.js')
+          .catch(()=>{});
+      });
+    }
   </script>
 </body>
 </html>

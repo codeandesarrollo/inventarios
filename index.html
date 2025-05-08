@@ -1,79 +1,82 @@
-  <!DOCTYPE html>
-  <html lang="es">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-    <title>Inventario Móvil</title>
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="theme-color" content="#007bff" />
+  <title>Inventario Móvil</title>
 
-    <!-- Firebase SDKs (compat) -->
-    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
+  <!-- PWA Manifest -->
+  <link rel="manifest" href="manifest.json" />
 
+  <!-- Firebase SDKs (compat) -->
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
 
-    <!-- Bootstrap CSS -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <!-- Bootstrap CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
 
-    <!-- PWA Manifest -->
-    <link rel="manifest" href="manifest.json" />
+  <!-- Estilos personalizados -->
+  <style>
+    body {
+      background-color: #f4f4f4;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      font-family: 'Segoe UI', sans-serif;
+      margin: 0;
+    }
+    .card {
+      width: 100%; max-width: 380px;
+      padding: 20px;
+      border-radius: 16px;
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
+    }
+    .form-control:focus {
+      border-color: #007bff;
+      box-shadow: 0 0 0 0.2rem rgba(0,123,255,.25);
+    }
+    #status {
+      text-align: center;
+      margin-bottom: 10px;
+      font-weight: bold;
+      color: #555;
+    }
+    #login-msg {
+      margin-top: 10px;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
 
-    <!-- Estilos personalizados -->
-    <style>
-      body {
-        background-color: #f4f4f4;
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        height: 100vh;
-        font-family: 'Segoe UI', sans-serif;
-      }
+  <div class="card bg-white">
+    <h2 class="text-center mb-3">Inventario Móvil</h2>
+    <div id="status"></div>
+    <form id="login-form">
+      <div class="mb-3">
+        <input id="username" class="form-control" placeholder="Usuario" required>
+      </div>
+      <div class="mb-3">
+        <input id="password" type="password" class="form-control" placeholder="Contraseña" required>
+      </div>
+      <button type="submit" class="btn btn-primary w-100">Ingresar</button>
+    </form>
+    <div id="login-msg" class="text-center text-danger"></div>
+  </div>
 
-      .card {
-        width: 100%;
-        max-width: 380px;
-        padding: 20px;
-        border-radius: 16px;
-        box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
-      }
+  <!-- Registro del Service Worker -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/service-worker.js')
+        .then(() => console.log("✅ SW registrado"))
+        .catch(err => console.error("❌ Error SW:", err));
+    }
+  </script>
 
-      .form-control:focus {
-        border-color: #007bff;
-        box-shadow: 0 0 0 0.2rem rgba(0,123,255,.25);
-      }
-
-      #login-msg {
-        margin-top: 10px;
-        font-weight: bold;
-      }
-    </style>
-  </head>
-  <body>
-
-    <div class="card bg-white">
-      <h2 class="text-center mb-3">Inventario Móvil</h2>
-      <form id="login-form">
-        <div class="mb-3">
-          <input id="username" class="form-control" placeholder="Usuario" required>
-        </div>
-        <div class="mb-3">
-          <input id="password" type="password" class="form-control" placeholder="Contraseña" required>
-        </div>
-        <button type="submit" class="btn btn-primary w-100">Ingresarrrr</button>
-      </form>
-      <div id="login-msg" class="text-center text-danger"></div>
-    </div>
-
-    <!-- Lógica del SW -->
-    <script>
-      
-      if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('/service-worker.js')
-          .then(() => console.log("SW registrado"))
-          .catch(err => console.error("SW error", err));
-      }
-    </script>
-
-    <!-- Tu lógica de Firebase y login -->
-    <script src="main.js" defer></script>
-  </body>
-  </html>
+  <!-- Lógica de Firebase, login y offline -->
+  <script src="main.js" defer></script>
+</body>
+</html>

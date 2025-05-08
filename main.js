@@ -1,66 +1,116 @@
-// Inicializa Firebase
+// main.js
+
+// ——— 1) Inicializa Firebase ———
 const firebaseConfig = {
-  apiKey: "AIzaSyAhsavAS72wIk1X-q-aukHeyK-GpAWXVl4",
-  authDomain: "appinventario-fab49.firebaseapp.com",
+  apiKey:    "AIzaSyAhsavAS72wIk1X-q-aukHeyK-GpAWXVl4",
+  authDomain:"appinventario-fab49.firebaseapp.com",
   projectId: "appinventario-fab49"
 };
 firebase.initializeApp(firebaseConfig);
-const db = firebase.firestore();
 
-// Habilitar persistencia offline con sincronización entre pestañas
+const db   = firebase.firestore();
 db.enablePersistence({ synchronizeTabs: true })
   .catch(err => {
     if (err.code === 'failed-precondition') {
-      console.warn('⚠️ Persistencia offline limitada: múltiples pestañas abiertas.');
+      console.warn('⚠️ Persistencia limitada: múltiples pestañas abiertas.');
     } else if (err.code === 'unimplemented') {
-      console.warn('⚠️ Persistencia offline no soportada por este navegador.');
+      console.warn('⚠️ Persistencia no soportada por este navegador.');
     }
   });
 
-// Manejo del formulario de login con fallback offline
-document.getElementById("login-form").addEventListener("submit", async (e) => {
+// ——— 2) Indicador online/offline ———
+const statusEl = document.getElementById('status');
+function updateStatus() {
+  const online = navigator.onLine;
+  statusEl.textContent = online ? '🟢 Conectado' : '🔴 Sin conexión';
+  statusEl.classList.toggle('text-success', online);
+  statusEl.classList.toggle('text-danger',  !online);
+}
+window.addEventListener('online',  updateStatus);
+window.addEventListener('offline', updateStatus);
+updateStatus();
+
+// ——— 3) Helpers para mensajes ———
+const msgEl = document.getElementById('login-msg');
+function showMsg(text, type = 'error') {
+  msgEl.textContent = text;
+  msgEl.className = type === 'error' ? 'text-danger' : 'text-warning';
+}
+function clearMsg() {
+  msgEl.textContent = '';
+  msgEl.className = '';
+}
+
+// ——— 4) Manejar submit del login ———
+document.getElementById('login-form')
+  .addEventListener('submit', onLogin);
+
+async function onLogin(e) {
   e.preventDefault();
-  const username = document.getElementById("username").value.trim();
-  const password = document.getElementById("password").value.trim();
-  const msg      = document.getElementById("login-msg");
+  clearMsg();
 
-  // 1) Fallback si no hay conexión: valida contra credenciales cacheadas
+  const username = document.getElementById('username').value.trim();
+  const password = document.getElementById('password').value;
+
+  // —— OFFLINE FALLBACK ——
   if (!navigator.onLine) {
-    const cached = JSON.parse(localStorage.getItem("usuarioCache"));
-    if (cached && cached.username === username && cached.password === password) {
-      return window.location.href = "dashboard.html";
+    const negocioId = localStorage.getItem('negocioId');
+    if (!negocioId) {
+      return showMsg('⚠️ Sin datos de sesión cacheados', 'error');
     }
-    return msg.textContent = "⚠️ Sin conexión y credenciales no encontradas";
-  }
+    try {
+      const snap = await db
+        .collection(`negocios/${negocioId}/usuarios`)
+        .where('username','==', username)
+        .where('password','==', password)
+        .get({ source: 'cache' });
 
-  // 2) Login online: consulta Firestore
-  try {
-    const negociosSnap = await db.collection("negocios").get();
-    for (const doc of negociosSnap.docs) {
-      const negocioId = doc.id;
-      const usuariosSnap = await db.collection(`negocios/${negocioId}/usuarios`)
-        .where("username", "==", username)
-        .where("password", "==", password)
-        .get();
-
-      if (!usuariosSnap.empty) {
-        const user = usuariosSnap.docs[0].data();
-        // Guarda password para validación offline
-        user.password = password;
-        
-        // Almacena datos en localStorage
-        localStorage.setItem("usuario", JSON.stringify(user));
-        localStorage.setItem("usuarioCache", JSON.stringify(user));
-        localStorage.setItem("negocioId", negocioId);
-        localStorage.setItem("nombreNegocio", doc.data().nombre || negocioId);
-
-        msg.textContent = "✅ Bienvenido";
-        return window.location.href = "dashboard.html";
+      if (snap.empty) {
+        showMsg('🚫 Credenciales offline incorrectas', 'error');
+      } else {
+        showMsg('⚠️ Offline: autenticado con cache', 'warning');
+        setTimeout(() => window.location.href = 'dashboard.html', 800);
       }
+    } catch (err) {
+      console.error(err);
+      showMsg('❌ Error offline: datos no disponibles', 'error');
     }
-    msg.textContent = "🚫 Credenciales incorrectas";
-  } catch (err) {
-    console.error("Error en login:", err);
-    msg.textContent = "❌ Error de conexión con Firestore";
+    return;
   }
-});
+
+  // —— ONLINE AUTHENTICATION ——
+  try {
+    // Busca al usuario en cualquier subcolección "usuarios"
+    const snap = await db
+      .collectionGroup('usuarios')
+      .where('username','==', username)
+      .where('password','==', password)
+      .get();
+
+    if (snap.empty) {
+      return showMsg('🚫 Credenciales incorrectas', 'error');
+    }
+
+    const userDoc  = snap.docs[0];
+    const userData = userDoc.data();
+    const negocioId = userDoc.ref.parent.parent.id;
+
+    // Opcional: obtener nombreNegocio
+    const negSnap = await db.collection('negocios').doc(negocioId).get();
+    const nombreNegocio = negSnap.exists
+      ? (negSnap.data().nombre || negocioId)
+      : negocioId;
+
+    // Guarda en localStorage para futuras sesiones/offline
+    localStorage.setItem('usuario',     JSON.stringify(userData));
+    localStorage.setItem('negocioId',   negocioId);
+    localStorage.setItem('nombreNegocio', nombreNegocio);
+
+    showMsg('✅ Bienvenido', 'warning');
+    window.location.href = 'dashboard.html';
+
+  } catch (err) {
+    console.error('Error en login:', err);
+    showMsg('❌ Error de conexión', 'error');
+  }
+}

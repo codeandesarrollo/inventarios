@@ -1,66 +1,99 @@
-// Inicializa Firebase
+// main.js
+
+// ——— 1) Inicializa Firebase ———
 const firebaseConfig = {
-  apiKey: "AIzaSyAhsavAS72wIk1X-q-aukHeyK-GpAWXVl4",
-  authDomain: "appinventario-fab49.firebaseapp.com",
+  apiKey:    "AIzaSyAhsavAS72wIk1X-q-aukHeyK-GpAWXVl4",
+  authDomain:"appinventario-fab49.firebaseapp.com",
   projectId: "appinventario-fab49"
 };
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
+db.enablePersistence({ synchronizeTabs: true }).catch(()=>{});
 
-// Habilitar persistencia offline con sincronización entre pestañas
-db.enablePersistence({ synchronizeTabs: true })
-  .catch(err => {
-    if (err.code === 'failed-precondition') {
-      console.warn('⚠️ Persistencia offline limitada: múltiples pestañas abiertas.');
-    } else if (err.code === 'unimplemented') {
-      console.warn('⚠️ Persistencia offline no soportada por este navegador.');
-    }
-  });
+// ——— 2) Indicador online/offline ———
+const statusEl = document.getElementById('status');
+function updateStatus() {
+  const o = navigator.onLine;
+  statusEl.textContent = o ? '🟢 Conectado' : '🔴 Sin conexión';
+  statusEl.classList.toggle('text-success', o);
+  statusEl.classList.toggle('text-danger',  !o);
+}
+window.addEventListener('online',  updateStatus);
+window.addEventListener('offline', updateStatus);
+updateStatus();
 
-// Manejo del formulario de login con fallback offline
-document.getElementById("login-form").addEventListener("submit", async (e) => {
+// ——— 3) Mensajes de login ———
+const msgEl = document.getElementById('login-msg');
+function showMsg(txt, type='error') {
+  msgEl.textContent = txt;
+  msgEl.className = type==='error' ? 'text-danger' : 'text-warning';
+}
+function clearMsg() {
+  msgEl.textContent = '';
+  msgEl.className = '';
+}
+
+// ——— 4) Maneja el submit ———
+document.getElementById('login-form')
+        .addEventListener('submit', async e => {
   e.preventDefault();
-  const username = document.getElementById("username").value.trim();
-  const password = document.getElementById("password").value.trim();
-  const msg      = document.getElementById("login-msg");
+  clearMsg();
 
-  // 1) Fallback si no hay conexión: valida contra credenciales cacheadas
-  if (!navigator.onLine) {
-    const cached = JSON.parse(localStorage.getItem("usuarioCache"));
-    if (cached && cached.username === username && cached.password === password) {
-      return window.location.href = "dashboard.html";
+  const username = document.getElementById('username').value.trim();
+  const password = document.getElementById('password').value.trim();
+
+  // A) OFFLINE-FIRST: si hay cache y coincide, entrar sin tocar Firestore
+  const cache = JSON.parse(localStorage.getItem('usuarioCache') || 'null');
+  if (!navigator.onLine && cache) {
+    if (cache.username===username && cache.password===password) {
+      // restaura sesión
+      localStorage.setItem('usuario',      JSON.stringify(cache.userData));
+      localStorage.setItem('negocioId',    cache.negocioId);
+      localStorage.setItem('nombreNegocio',cache.nombreNegocio);
+
+      showMsg('⚠️ Offline: ingresando con credenciales guardadas','warning');
+      return setTimeout(() => location.href='dashboard.html', 800);
+    } else {
+      return showMsg('🚫 Offline y credenciales no encontradas','error');
     }
-    return msg.textContent = "⚠️ Sin conexión y credenciales no encontradas";
   }
 
-  // 2) Login online: consulta Firestore
+  // B) LOGIN ONLINE
   try {
-    const negociosSnap = await db.collection("negocios").get();
+    // iteramos tus negocios para encontrar al usuario
+    const negociosSnap = await db.collection('negocios').get();
     for (const doc of negociosSnap.docs) {
-      const negocioId = doc.id;
-      const usuariosSnap = await db.collection(`negocios/${negocioId}/usuarios`)
-        .where("username", "==", username)
-        .where("password", "==", password)
+      const idNeg = doc.id;
+      const usSnap = await db
+        .collection(`negocios/${idNeg}/usuarios`)
+        .where('username','==', username)
+        .where('password','==', password)
         .get();
+      if (!usSnap.empty) {
+        const data = usSnap.docs[0].data();
+        const nombreNeg = doc.data().nombre || idNeg;
 
-      if (!usuariosSnap.empty) {
-        const user = usuariosSnap.docs[0].data();
-        // Guarda password para validación offline
-        user.password = password;
-        
-        // Almacena datos en localStorage
-        localStorage.setItem("usuario", JSON.stringify(user));
-        localStorage.setItem("usuarioCache", JSON.stringify(user));
-        localStorage.setItem("negocioId", negocioId);
-        localStorage.setItem("nombreNegocio", doc.data().nombre || negocioId);
+        // guarda sesión activa
+        localStorage.setItem('usuario',       JSON.stringify(data));
+        localStorage.setItem('negocioId',     idNeg);
+        localStorage.setItem('nombreNegocio', nombreNeg);
 
-        msg.textContent = "✅ Bienvenido";
-        return window.location.href = "dashboard.html";
+        // guarda cache offline completo
+        localStorage.setItem('usuarioCache', JSON.stringify({
+          username,
+          password,
+          userData:     data,
+          negocioId:    idNeg,
+          nombreNegocio: nombreNeg
+        }));
+
+        showMsg('✅ Bienvenido','warning');
+        return location.href='dashboard.html';
       }
     }
-    msg.textContent = "🚫 Credenciales incorrectas";
+    showMsg('🚫 Credenciales incorrectas','error');
   } catch (err) {
-    console.error("Error en login:", err);
-    msg.textContent = "❌ Error de conexión con Firestore";
+    console.error('Login online falló:', err);
+    showMsg('❌ Error de conexión, inténtalo de nuevo','error');
   }
 });

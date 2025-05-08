@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Inventario Paginado</title>
+
+  <!-- Firebase SDKs -->
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+  <style>
+    body {
+      font-family:'Segoe UI', sans-serif;
+      margin:0; padding:20px;
+      background:#f4f6f9;
+    }
+    h1 { text-align:center; margin-top:0; }
+    #usuario-info { text-align:center; margin-bottom:20px; font-weight:bold; }
+    #busquedaInv {
+      width:100%; padding:8px; font-size:16px; margin-bottom:12px;
+      box-sizing:border-box;
+    }
+    table {
+      width:100%; border-collapse:collapse; margin-bottom:12px;
+      background:white; box-shadow:0 2px 6px rgba(0,0,0,0.1);
+    }
+    th, td {
+      padding:8px; border:1px solid #ccc; text-align:left;
+    }
+    th { background:#e1e5ea; }
+    button {
+      padding:6px 10px; font-size:14px; cursor:pointer; margin-right:4px;
+    }
+    .action-btn { background:#2980b9; color:white; border:none; border-radius:4px; }
+    .delete-btn { background:#c0392b; color:white; border:none; border-radius:4px; }
+    .nav-btn { margin-top:12px; text-align:center; }
+    .nav-btn button { margin:0 6px; }
+    .back-btn {
+      text-align:center; margin:20px 0;
+    }
+    .back-btn a {
+      text-decoration:none; color:#2980b9; font-weight:bold;
+    }
+    .logout {
+      display:block; margin:0 auto; padding:10px 20px;
+      background:#c0392b; color:white; border:none; border-radius:6px;
+      cursor:pointer; max-width:200px; text-align:center;
+    }
+    .toast {
+      position:fixed; bottom:30px; left:50%;
+      transform:translateX(-50%); background:#323232;
+      color:white; padding:14px 24px; border-radius:8px;
+      font-size:16px; opacity:0; pointer-events:none;
+      transition:opacity 0.3s ease; z-index:9999;
+    }
+    .toast.show { opacity:1; pointer-events:auto; }
+    .toast.success { background:#27ae60; }
+    .toast.error   { background:#c0392b; }
+  </style>
+</head>
+<body>
+
+  <h1>Inventario General</h1>
+  <p id="usuario-info"></p>
+
+  <input id="busquedaInv" type="text" placeholder="🔍 Buscar por nombre o categoría">
+
+  <div class="nav-btn">
+    <button id="prevBtn" disabled>⬅ Anterior</button>
+    <button id="nextBtn" disabled>Siguiente ➡</button>
+    <button onclick="exportarExcel()">📤 Exportar Excel</button>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Producto</th>
+        <th>Categoría</th>
+        <th>Precio Neto</th>
+        <th>Precio Público</th>
+        <th>Stock</th>
+        <th>Acciones</th>
+      </tr>
+    </thead>
+    <tbody id="tabla-inventario"></tbody>
+  </table>
+
+  <div style="text-align:center; margin-top:20px;">
+    <a href="dashboard.html" style="
+      display:inline-block;
+      padding:10px 20px;
+      background:#2980b9;
+      color:white;
+      border-radius:6px;
+      text-decoration:none;
+      font-weight:bold;
+    ">
+      ⬅ Volver al Dashboard
+    </a>
+  </div>
+
+  <button class="logout" onclick="cerrarSesion()">Cerrar sesión</button>
+
+  <div id="toast" class="toast"></div>
+
+  <script>
+    // Validar sesión
+    const usuario   = JSON.parse(localStorage.getItem("usuario"));
+    const negocioId = localStorage.getItem("negocioId");
+    if (!usuario || !negocioId) {
+      window.location.href = "index.html";
+    } else {
+      document.getElementById("usuario-info").textContent =
+        `Usuario: ${usuario.username}`;
+    }
+
+    // Inicializar Firestore + persistencia
+    const firebaseConfig = {
+      apiKey: "AIzaSyAhsavAS72wIk1X-q-aukHeyK-GpAWXVl4",
+      authDomain: "appinventario-fab49.firebaseapp.com",
+      projectId: "appinventario-fab49"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+    db.enablePersistence({ synchronizeTabs: true }).catch(() => {});
+
+    // Toast helper
+    function mostrarToast(msg, tipo="success") {
+      const t = document.getElementById("toast");
+      t.textContent = msg;
+      t.className = `toast show ${tipo}`;
+      setTimeout(()=> t.className="toast", 3000);
+    }
+
+    // Paginación & búsqueda
+    const pageSize = 20;
+    let firstDoc = null, lastDoc = null;
+    let currentSearch = "";
+
+    // Cargar página: dir=0 inicial, +1 siguiente, -1 anterior
+    async function loadPage(dir=0) {
+      let q = db.collection(`negocios/${negocioId}/productos`).orderBy("nombre");
+      // búsqueda server-side
+      if (currentSearch) {
+        const end = currentSearch + "\uf8ff";
+        q = q.startAt(currentSearch).endAt(end);
+      }
+      if (dir > 0 && lastDoc) {
+        q = q.startAfter(lastDoc);
+      } else if (dir < 0 && firstDoc) {
+        q = q.endBefore(firstDoc).limitToLast(pageSize);
+      }
+      q = q.limit(pageSize);
+      const snap = await q.get();
+      if (snap.empty) {
+        renderTabla([]);
+        return;
+      }
+      firstDoc = snap.docs[0];
+      lastDoc  = snap.docs[snap.docs.length -1];
+      renderTabla(snap.docs);
+
+      // habilitar botones
+      document.getElementById("prevBtn").disabled = !snap.docs.length || !snap.query._queryOptions.startAt;
+      document.getElementById("nextBtn").disabled = snap.docs.length < pageSize;
+    }
+
+    // Render tabla con documentos
+    function renderTabla(docs) {
+      const tbody = document.getElementById("tabla-inventario");
+      tbody.innerHTML = "";
+      docs.forEach(doc => {
+        const p = doc.data();
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${p.nombre}</td>
+          <td>${p.categoria||"-"}</td>
+          <td>$${p.precioNeto}</td>
+          <td>$${p.precioPublico}</td>
+          <td>${p.stock}</td>
+          <td>
+            <button class="action-btn" onclick="editarProducto('${doc.id}')">✏️</button>
+            <button class="delete-btn" onclick="eliminarProducto('${doc.id}')">🗑️</button>
+          </td>`;
+        tbody.appendChild(tr);
+      });
+    }
+
+    // Búsqueda
+    document.getElementById("busquedaInv").addEventListener("input", e => {
+      currentSearch = e.target.value.trim().toLowerCase();
+      firstDoc = lastDoc = null;
+      loadPage(0);
+    });
+
+    // Navegación
+    document.getElementById("nextBtn").onclick = () => loadPage(+1);
+    document.getElementById("prevBtn").onclick = () => loadPage(-1);
+
+    // Editar producto
+    async function editarProducto(id) {
+      // Obtener datos actuales
+      const doc = await db.collection(`negocios/${negocioId}/productos`).doc(id).get();
+      const p = doc.data();
+      const nombre    = prompt("Nombre:", p.nombre) || p.nombre;
+      const categoria = prompt("Categoría:", p.categoria || "") || p.categoria;
+      const precioN   = parseFloat(prompt("Precio Neto:", p.precioNeto))  || p.precioNeto;
+      const precioP   = parseFloat(prompt("Precio Público:", p.precioPublico)) || p.precioPublico;
+      const stock     = parseInt(prompt("Stock:", p.stock),10) || p.stock;
+      try {
+        await db.collection(`negocios/${negocioId}/productos`).doc(id).update({
+          nombre, categoria, precioNeto: precioN, precioPublico: precioP, stock
+        });
+        mostrarToast("✔️ Producto actualizado");
+        loadPage(0);
+      } catch(err) {
+        console.error(err);
+        mostrarToast("❌ Error al actualizar", "error");
+      }
+    }
+
+    // Eliminar producto
+    async function eliminarProducto(id) {
+      if (!confirm("¿Eliminar este producto?")) return;
+      try {
+        await db.collection(`negocios/${negocioId}/productos`).doc(id).delete();
+        mostrarToast("🗑️ Producto eliminado");
+        loadPage(0);
+      } catch(err) {
+        console.error(err);
+        mostrarToast("❌ Error al eliminar", "error");
+      }
+    }
+
+    // Exportar a Excel
+    async function exportarExcel() {
+      const snap = await db.collection(`negocios/${negocioId}/productos`)
+                           .orderBy("nombre").get();
+      const datos = snap.docs.map(d=> {
+        const p = d.data();
+        return [p.nombre, p.categoria||"", p.precioNeto, p.precioPublico, p.stock];
+      });
+      datos.unshift(["Producto","Categoría","Precio Neto","Precio Público","Stock"]);
+      const ws = XLSX.utils.aoa_to_sheet(datos);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Inventario");
+      XLSX.writeFile(wb, "Inventario.xlsx");
+    }
+
+    // Cerrar sesión
+    function cerrarSesion() {
+      localStorage.clear();
+      window.location.href = "index.html";
+    }
+
+    // Carga inicial
+    loadPage(0);
+  </script>
+</body>
+</html>

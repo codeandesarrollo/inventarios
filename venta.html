@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Registrar Venta</title>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+  <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      margin: 0;
+      padding: 20px;
+      background-color: #f4f6f9;
+    }
+    h1 {
+      margin-top: 0;
+      text-align: center;
+    }
+    #usuario-info {
+      text-align: center;
+      margin-bottom: 20px;
+      font-weight: bold;
+    }
+    input[type="text"] {
+      width: 100%;
+      padding: 10px;
+      font-size: 16px;
+      margin-bottom: 15px;
+    }
+    .product-list {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 15px;
+      margin-bottom: 20px;
+    }
+    .product-card {
+      background: white;
+      border-radius: 8px;
+      padding: 10px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+      text-align: center;
+    }
+    .product-card button {
+      margin-top: 10px;
+      padding: 8px;
+      width: 100%;
+      font-size: 14px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 20px;
+    }
+    th, td {
+      padding: 10px;
+      border: 1px solid #ccc;
+      text-align: left;
+    }
+    th {
+      background: #e1e5ea;
+    }
+    .total {
+      font-weight: bold;
+      font-size: 18px;
+      text-align: right;
+      margin-top: 10px;
+    }
+    .confirm-btn {
+      background-color: #27ae60;
+      color: white;
+      padding: 12px;
+      font-size: 16px;
+      border: none;
+      border-radius: 6px;
+      width: 100%;
+      margin-top: 15px;
+      cursor: pointer;
+    }
+    .back-btn {
+      margin-top: 10px;
+      text-align: center;
+    }
+    .back-btn a {
+      text-decoration: none;
+      color: #2980b9;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>Registrar Venta</h1>
+  <p id="usuario-info"></p>
+
+  <input type="text" id="busqueda" placeholder="🔍 Buscar producto por nombre o código...">
+  <div class="product-list" id="lista-productos"></div>
+
+  <h2>Carrito</h2>
+  <table>
+    <thead>
+      <tr><th>Producto</th><th>Cantidad</th><th>Precio</th><th>Subtotal</th><th></th></tr>
+    </thead>
+    <tbody id="tabla-carrito"></tbody>
+  </table>
+  <div class="total" id="total-carrito">Total: $0.00</div>
+  <button class="confirm-btn" onclick="confirmarVenta()">✅ Confirmar Venta</button>
+
+  <div style="text-align:center; margin-top:20px;">
+    <a href="dashboard.html" style="
+      display:inline-block;
+      padding:10px 20px;
+      background:#2980b9;
+      color:white;
+      border-radius:6px;
+      text-decoration:none;
+      font-weight:bold;
+    ">
+      ⬅ Volver al Dashboard
+    </a>
+  </div>
+
+  <script>
+    // ——— 1) Chequeo de sesión ———
+    const usuario = JSON.parse(localStorage.getItem("usuario"));
+    const negocioId = localStorage.getItem("negocioId");
+    if (!usuario || !negocioId) {
+      alert("Debes iniciar sesión para registrar la venta");
+      window.location.href = "index.html";
+    }
+    // Mostrar el nombre de usuario
+    document.getElementById("usuario-info").textContent =
+      `Usuario: ${usuario.username}`;
+  </script>
+
+  <script>
+    // ——— 2) Inicializar Firebase ———
+    const firebaseConfig = {
+      apiKey: "AIzaSyAhsavAS72wIk1X-q-aukHeyK-GpAWXVl4",
+      authDomain: "appinventario-fab49.firebaseapp.com",
+      projectId: "appinventario-fab49"
+    };
+    firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+
+// habilitar persistencia offline (y sincronización entre pestañas)
+firebase.firestore().enablePersistence({ synchronizeTabs: true })
+  .then(() => console.log("📦 Firestore offline persistence habilitada"))
+  .catch(err => {
+    if (err.code === 'failed-precondition') {
+      console.warn("⚠️ No se pudo habilitar persistencia: varias pestañas abiertas.");
+    } else if (err.code === 'unimplemented') {
+      console.warn("⚠️ Persistencia offline no soportada en este navegador.");
+    }
+  });
+
+
+    // ——— 3) Variables de carrito ———
+    const carrito = [];
+
+    // ——— 4) Carga productos top ventas ———
+    async function cargarProductos() {
+      const contenedor = document.getElementById("lista-productos");
+      contenedor.innerHTML = "";
+
+      // 4.1) Calcula ventas por producto
+      const ventasSnap = await db.collection(`negocios/${negocioId}/ventas`).get();
+      const ventasMap = {};
+      ventasSnap.forEach(doc => {
+        const venta = doc.data();
+        (venta.productos || []).forEach(item => {
+          ventasMap[item.productoId] = (ventasMap[item.productoId] || 0) + item.cantidad;
+        });
+      });
+
+      // 4.2) Top 4 IDs
+      const topIds = Object.entries(ventasMap)
+        .sort(([,a], [,b]) => b - a)
+        .slice(0,4)
+        .map(([id]) => id);
+
+      // 4.3) Relleno con primeros productos si hace falta
+      if (topIds.length < 4) {
+        const fallBackSnap = await db.collection(`negocios/${negocioId}/productos`)
+          .limit(4 - topIds.length)
+          .get();
+        fallBackSnap.forEach(doc => {
+          if (!topIds.includes(doc.id)) topIds.push(doc.id);
+        });
+      }
+
+      // 4.4) Renderizas las cards
+      for (const id of topIds) {
+        const doc = await db.collection(`negocios/${negocioId}/productos`).doc(id).get();
+        if (!doc.exists) continue;
+        const p = doc.data();
+        const div = document.createElement("div");
+        div.className = "product-card";
+        div.innerHTML = `
+          <strong>${p.nombre}</strong><br>
+          <small>Stock: ${p.stock}</small><br>
+          <small>$${p.precioPublico}</small>
+          <button onclick="agregarAlCarrito('${doc.id}','${p.nombre}',${p.precioPublico},${p.stock})">
+            Agregar
+          </button>
+        `;
+        contenedor.appendChild(div);
+      }
+    }
+
+    // ——— 5) Función para agregar al carrito ———
+    async function agregarAlCarrito(id, nombre, precio, stock) {
+      let item = carrito.find(p => p.id === id);
+
+      if (!item) {
+        // Trae promociones
+        const promSnap = await db.collection(`negocios/${negocioId}/productos/${id}/promociones`)
+          .orderBy("cantidadMinima","desc")
+          .get();
+        const promos = [];
+        promSnap.forEach(d => promos.push(d.data()));
+
+        item = { id, nombre, precio, cantidad: 1, stock, promociones: promos };
+        carrito.push(item);
+      } else {
+        if (item.cantidad + 1 > stock) return alert("Sin stock disponible");
+        item.cantidad++;
+      }
+      renderCarrito();
+    }
+
+    // ——— 6) Eliminar del carrito ———
+    function eliminarDelCarrito(id) {
+      const idx = carrito.findIndex(p => p.id === id);
+      if (idx > -1) carrito.splice(idx,1);
+      renderCarrito();
+    }
+
+    // ——— 7) Render del carrito ———
+    function renderCarrito() {
+      const tbody = document.getElementById("tabla-carrito");
+      tbody.innerHTML = "";
+      let total = 0;
+
+      carrito.forEach(p => {
+        let subtotal = p.precio * p.cantidad;
+        // Aplica promociones si hay
+        for (const promo of p.promociones) {
+          if (p.cantidad >= promo.cantidadMinima) {
+            const paquetes = Math.floor(p.cantidad / promo.cantidadMinima);
+            const sobrantes = p.cantidad % promo.cantidadMinima;
+            subtotal = paquetes * promo.precioPromocional + sobrantes * p.precio;
+            break;
+          }
+        }
+        total += subtotal;
+
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${p.nombre}</td>
+          <td>
+            <input
+              type="number" min="1" max="${p.stock}"
+              value="${p.cantidad}"
+              onchange="cambiarCantidad('${p.id}', this.value)"
+            >
+          </td>
+          <td>$${p.precio}</td>
+          <td>$${subtotal.toFixed(2)}</td>
+          <td><button onclick="eliminarDelCarrito('${p.id}')">🗑</button></td>
+        `;
+        tbody.appendChild(tr);
+      });
+
+      document.getElementById("total-carrito")
+        .textContent = `Total: $${total.toFixed(2)}`;
+    }
+
+    // ——— 8) Cambiar cantidad manualmente ———
+    function cambiarCantidad(id, valor) {
+      const item = carrito.find(p => p.id === id);
+      const nueva = parseInt(valor,10);
+      if (!item || isNaN(nueva) || nueva<1 || nueva>item.stock) return;
+      item.cantidad = nueva;
+      renderCarrito();
+    }
+
+    // ——— 9) Confirmar Venta ———
+    async function confirmarVenta() {
+      if (carrito.length === 0) return alert("Carrito vacío");
+
+      // Preparamos batch y datos de venta
+      const batch = db.batch();
+      const ventaProductos = [];
+      let totalVenta = 0;
+      const cantidadTotal = carrito.reduce((s,p) => s + p.cantidad, 0);
+
+      for (const p of carrito) {
+        const refProd = db.collection(`negocios/${negocioId}/productos`).doc(p.id);
+        const nuevoStock = p.stock - p.cantidad;
+        if (nuevoStock < 0) return alert(`Stock insuficiente para ${p.nombre}`);
+        batch.update(refProd, { stock: nuevoStock });
+
+        let subtotal = p.precio * p.cantidad;
+        let promoAplicada = "Ninguna";
+        for (const promo of p.promociones) {
+          if (p.cantidad >= promo.cantidadMinima) {
+            const paquetes = Math.floor(p.cantidad / promo.cantidadMinima);
+            const sobrantes = p.cantidad % promo.cantidadMinima;
+            subtotal = paquetes * promo.precioPromocional + sobrantes * p.precio;
+            promoAplicada = `${promo.cantidadMinima} x $${promo.precioPromocional}`;
+            break;
+          }
+        }
+        totalVenta += subtotal;
+        ventaProductos.push({
+          productoId:     p.id,
+          nombre:         p.nombre,
+          cantidad:       p.cantidad,
+          precioUnitario: p.precio,
+          subtotal:       parseFloat(subtotal.toFixed(2)),
+          promocion:      promoAplicada
+        });
+      }
+
+      // Documento de venta
+      const refVenta = db.collection(`negocios/${negocioId}/ventas`).doc();
+      batch.set(refVenta, {
+        fecha:         firebase.firestore.FieldValue.serverTimestamp(),
+        total:         parseFloat(totalVenta.toFixed(2)),
+        cantidadTotal: cantidadTotal,
+        productos:     ventaProductos,
+        usuario:       usuario.username
+      });
+
+      try {
+        await batch.commit();
+        alert("✅ Venta registrada correctamente");
+        carrito.length = 0;
+        renderCarrito();
+        cargarProductos();
+      } catch (err) {
+        console.error(err);
+        alert("❌ Error al registrar la venta");
+      }
+    }
+
+    // ——— 10) Filtro de búsqueda ———
+    document.getElementById("busqueda").addEventListener("input", function() {
+      const f = this.value.toLowerCase();
+      document.querySelectorAll(".product-card").forEach(c => {
+        c.style.display = c.textContent.toLowerCase().includes(f) ? "block" : "none";
+      });
+    });
+
+    // ——— 11) Inicializar pantallas ———
+    cargarProductos();
+    renderCarrito();
+  </script>
+</body>
+</html>

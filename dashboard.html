@@ -4,10 +4,13 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Dashboard</title>
+
+  <!-- Firebase SDKs -->
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/quagga/0.12.1/quagga.min.js"></script>
+
   <style>
     * { box-sizing: border-box; }
     body {
@@ -30,387 +33,75 @@
       text-align: center;
       cursor: pointer;
     }
-    .section { display: none; }
-    .section.active { display: block; margin-top: 20px; }
-    input, button {
-      padding: 10px; margin: 5px 0; width: 100%; font-size: 16px;
-    }
-    table {
-      width: 100%; border-collapse: collapse; margin-top: 15px;
-    }
-    th, td {
-      border: 1px solid #ccc; padding: 10px; text-align: left;
-    }
-    th { background-color: #e1e5ea; }
     .logout {
       margin-top: 20px; background-color: #c0392b; color: white;
       border: none; padding: 10px 16px; border-radius: 6px;
-    }
-    .scanner-container {
-      width: 100%;
-      max-width: 350px;
-      height: 220px;
-      border: 2px solid #007bff;
-      border-radius: 8px;
-      background-color: #000;
-      position: relative;
-      overflow: hidden;
-      margin: 10px auto;
+      cursor: pointer;
     }
     .toast {
-      position: fixed;
-      bottom: 30px;
-      left: 50%;
-      transform: translateX(-50%);
-      background: #323232;
-      color: white;
-      padding: 14px 24px;
-      border-radius: 8px;
-      font-size: 16px;
-      opacity: 0;
-      pointer-events: none;
-      transition: opacity 0.3s ease;
-      z-index: 9999;
+      position: fixed; bottom: 30px; left: 50%;
+      transform: translateX(-50%); background: #323232;
+      color: white; padding: 14px 24px; border-radius: 8px;
+      font-size: 16px; opacity: 0; pointer-events: none;
+      transition: opacity 0.3s ease; z-index: 9999;
     }
-    .toast.show {
-      opacity: 1;
-      pointer-events: auto;
-    }
+    .toast.show { opacity: 1; pointer-events: auto; }
     .toast.success { background: #27ae60; }
-    .toast.error { background: #c0392b; }
+    .toast.error   { background: #c0392b; }
   </style>
 </head>
 <body>
 
-<h1>Panel del negocio</h1>
-<p id="usuario-info"></p>
+  <h1>Panel del negocio</h1>
+  <p id="usuario-info"></p>
 
-<div class="card-grid">
-  <div class="card" onclick="mostrarSeccion('agregar')">➕ Agregar Producto</div>
-  <a class="card" href="venta.html">🛒 Registrar Venta</a>
-  <div class="card" onclick="mostrarSeccion('merma')">⚠️ Registrar Merma</div>
-  <div class="card" onclick="mostrarSeccion('inventario')">📦 Inventario</div>
-  <div class="card" onclick="mostrarSeccion('promociones')">🎁 Promociones</div>
-
-</div>
-
-<div id="agregar" class="section">
-  <h2>Agregar nuevo producto</h2>
-  <input id="nombre" placeholder="Nombre del producto">
-  <input id="precioNeto" type="number" placeholder="Precio Neto">
-  <input id="precioPublico" type="number" placeholder="Precio Público">
-  <input id="stock" type="number" placeholder="Cantidad">
-  <input id="categoria" placeholder="Categoría">
-  <input id="codigoproducto" placeholder="Código de producto">
-  <div id="scanner" class="scanner-container"></div>
-  <button onclick="iniciarScanner()" id="btn-escanear">📷 Escanear código de barras</button>
-  <button onclick="detenerScanner()" id="btn-cancelar" style="display:none; background:#555; color:white;">✖ Cancelar escaneo</button>
-  <button onclick="agregarProducto()">Agregar</button>
-</div>
-
-<div id="venta" class="section">
-  <h2>Productos disponibles</h2>
-  <table>
-    <thead><tr><th>Producto</th><th>Precio</th><th>Stock</th><th>Acción</th></tr></thead>
-    <tbody id="tabla-productos"></tbody>
-  </table>
-</div>
-
-
-<div id="promociones" class="section">
-  <h2>Agregar Promoción por Producto</h2>
-
-  <label>Producto:</label>
-  <select id="productoPromo" style="padding:10px; width:100%; font-size:16px;"></select>
-
-  <label>Cantidad mínima:</label>
-  <input type="number" id="cantidadPromo" placeholder="Ej: 6">
-
-  <label>Precio promocional por paquete:</label>
-  <input type="number" id="precioPromo" placeholder="Ej: 130">
-
-  <button onclick="guardarPromocion()">Guardar Promoción</button>
-
-  <div style="margin-top: 15px;">
-    <button onclick="mostrarPromocionesProducto()">📋 Ver promociones del producto</button>
-    <ul id="lista-promos" style="margin-top:10px;"></ul>
+  <div class="card-grid">
+    <a class="card" href="agregaproductos.html">➕ Agregar Productos</a>
+    <a class="card" href="venta.html">🛒 Realizar Venta</a>
+    <a class="card" href="registromerma.html">⚠️ Registrar Merma</a>
+    <a class="card" href="registrausuarios.html">👤 Registrar Usuario</a>
+    <a class="card" href="inventario.html">📦 Ver Inventario</a>
+    <a class="card" href="reporteventas.html">📈 Reporte de Ventas</a>
+    <a class="card" href="promociones.html">🎁 Promociones</a>
   </div>
-</div>
 
+  <button class="logout" onclick="cerrarSesion()">Cerrar sesión</button>
+  <div id="toast" class="toast"></div>
 
-
-
-<div id="merma" class="section">
-  <h2>Merma (próximamente)</h2>
-</div>
-
-<div id="inventario" class="section">
-  <h2>Inventario general</h2>
-  <button onclick="exportarInventarioExcel()">📤 Exportar a Excel</button>
-  <table>
-    <thead><tr><th>Producto</th><th>Categoría</th><th>Precio Neto</th><th>Precio Público</th><th>Stock</th></tr></thead>
-    <tbody id="tabla-inventario"></tbody>
-  </table>
-</div>
-
-<button class="logout" onclick="cerrarSesion()">Cerrar sesión</button>
-<div id="toast" class="toast"></div>
-
-<script>
-  const firebaseConfig = {
-    apiKey: "AIzaSyAhsavAS72wIk1X-q-aukHeyK-GpAWXVl4",
-    authDomain: "appinventario-fab49.firebaseapp.com",
-    projectId: "appinventario-fab49"
-  };
-  firebase.initializeApp(firebaseConfig);
-  const db = firebase.firestore();
-
-  const usuario = JSON.parse(localStorage.getItem("usuario"));
-  const negocioId = localStorage.getItem("negocioId");
-  const negocioNombre = localStorage.getItem("nombreNegocio");
-
-  if (!usuario || !negocioId) {
-    window.location.href = "index.html";
-  } else {
+  <script>
+    // 1) Leer sesión
+    const usuario      = JSON.parse(localStorage.getItem("usuario"));
+    const negocioId    = localStorage.getItem("negocioId");
+    const negocioNombre= localStorage.getItem("nombreNegocio");
+    if (!usuario || !negocioId) {
+      return window.location.href = "index.html";
+    }
     document.getElementById("usuario-info").textContent =
       `Usuario: ${usuario.username} | Negocio: ${negocioNombre}`;
-  }
 
- 
-function mostrarSeccion(id) {
-  document.querySelectorAll(".section").forEach(s => s.classList.remove("active"));
-  document.getElementById(id).classList.add("active");
+    // 2) Firebase
+    const firebaseConfig = {
+      apiKey: "AIzaSyAhsavAS72wIk1X-q-aukHeyK-GpAWXVl4",
+      authDomain: "appinventario-fab49.firebaseapp.com",
+      projectId: "appinventario-fab49"
+    };
+    firebase.initializeApp(firebaseConfig);
+    firebase.firestore().enablePersistence({ synchronizeTabs: true }).catch(()=>{});
+    const db = firebase.firestore();
 
-  if (id === "venta") cargarProductos();
-  if (id === "inventario") cargarInventario();
-  if (id === "promociones") cargarProductosEnSelect();
-}
-
-
-  function mostrarToast(mensaje, tipo = "success") {
-    const toast = document.getElementById("toast");
-    toast.textContent = mensaje;
-    toast.className = `toast show ${tipo}`;
-    setTimeout(() => {
-      toast.classList.remove("show");
-    }, 3000);
-  }
-
-  async function agregarProducto() {
-    const nombre = document.getElementById("nombre").value.trim();
-    const precioNeto = parseFloat(document.getElementById("precioNeto").value);
-    const precioPublico = parseFloat(document.getElementById("precioPublico").value);
-    const stock = parseInt(document.getElementById("stock").value);
-    const categoria = document.getElementById("categoria").value.trim();
-    const codigo = document.getElementById("codigoproducto").value.trim();
-
-    if (!nombre || isNaN(precioNeto) || isNaN(precioPublico) || isNaN(stock) || !categoria || !codigo) {
-      mostrarToast("⚠️ Completa todos los campos correctamente.", "error");
-      return;
+    // 3) Logout
+    function cerrarSesion(){
+      localStorage.clear();
+      window.location.href = "index.html";
     }
 
-    try {
-      const existe = await db.collection(`negocios/${negocioId}/productos`)
-        .where("codigo", "==", codigo).get();
-
-      if (!existe.empty) {
-        mostrarToast("🚫 Ya existe un producto con ese código de barras.", "error");
-        return;
-      }
-
-      await db.collection(`negocios/${negocioId}/productos`).add({
-        nombre, precioNeto, precioPublico, stock, categoria, codigo
-      });
-
-      mostrarToast("✅ Producto agregado exitosamente.", "success");
-
-      document.getElementById("nombre").value = "";
-      document.getElementById("precioNeto").value = "";
-      document.getElementById("precioPublico").value = "";
-      document.getElementById("stock").value = "";
-      document.getElementById("categoria").value = "";
-      document.getElementById("codigoproducto").value = "";
-      document.getElementById("nombre").focus();
-
-    } catch (error) {
-      console.error(error);
-      mostrarToast("❌ Error al guardar el producto.", "error");
+    // 4) Toast helper (por si quieres usarlo aquí)
+    function mostrarToast(msg, tipo="success"){
+      const t = document.getElementById("toast");
+      t.textContent = msg;
+      t.className = `toast show ${tipo}`;
+      setTimeout(()=> t.className="toast", 3000);
     }
-  }
-
-  async function cargarProductos() {
-    const tbody = document.getElementById("tabla-productos");
-    tbody.innerHTML = "";
-    const snap = await db.collection(`negocios/${negocioId}/productos`).get();
-    snap.forEach(doc => {
-      const d = doc.data();
-      const tr = document.createElement("tr");
-      tr.innerHTML = `
-        <td>${d.nombre}</td>
-        <td>$${d.precioPublico}</td>
-        <td>${d.stock}</td>
-        <td><button onclick="registrarVenta('${doc.id}', ${d.stock})">Vender 1</button></td>
-      `;
-      tbody.appendChild(tr);
-    });
-  }
-
-  async function registrarVenta(id, stockActual) {
-    if (stockActual <= 0) {
-      mostrarToast("🚫 Sin stock disponible.", "error");
-      return;
-    }
-    await db.collection(`negocios/${negocioId}/productos`).doc(id).update({
-      stock: stockActual - 1
-    });
-    cargarProductos();
-  }
-
-  async function cargarInventario() {
-    const tbody = document.getElementById("tabla-inventario");
-    tbody.innerHTML = "";
-    const snap = await db.collection(`negocios/${negocioId}/productos`).get();
-    snap.forEach(doc => {
-      const d = doc.data();
-      const tr = document.createElement("tr");
-      tr.innerHTML = `
-        <td>${d.nombre}</td>
-        <td>${d.categoria || "-"}</td>
-        <td>$${d.precioNeto}</td>
-        <td>$${d.precioPublico}</td>
-        <td>${d.stock}</td>
-      `;
-      tbody.appendChild(tr);
-    });
-  }
-
-  async function exportarInventarioExcel() {
-    const snap = await db.collection(`negocios/${negocioId}/productos`).get();
-    const datos = [];
-    snap.forEach(doc => {
-      const d = doc.data();
-      datos.push({
-        Producto: d.nombre,
-        Categoría: d.categoria || "",
-        "Precio Neto": d.precioNeto,
-        "Precio Público": d.precioPublico,
-        Stock: d.stock
-      });
-    });
-    const ws = XLSX.utils.json_to_sheet(datos);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Inventario");
-    XLSX.writeFile(wb, "Inventario.xlsx");
-  }
-
-  function cerrarSesion() {
-    localStorage.clear();
-    window.location.href = "index.html";
-  }
-
-  function iniciarScanner() {
-    document.getElementById("btn-escanear").style.display = "none";
-    document.getElementById("btn-cancelar").style.display = "inline-block";
-
-    Quagga.init({
-      inputStream: {
-        name: "Live",
-        type: "LiveStream",
-        target: document.querySelector('#scanner'),
-        constraints: { facingMode: "environment" }
-      },
-      decoder: {
-        readers: ["ean_reader", "code_128_reader"]
-      }
-    }, err => {
-      if (err) {
-        console.error(err);
-        mostrarToast("❌ No se pudo iniciar el escáner.", "error");
-        return;
-      }
-      Quagga.start();
-    });
-
-    Quagga.onDetected(data => {
-      const code = data.codeResult.code;
-      document.getElementById("codigoproducto").value = code;
-      detenerScanner();
-    });
-  }
-
-  function detenerScanner() {
-    Quagga.stop();
-    Quagga.offDetected();
-    document.getElementById("scanner").innerHTML = "";
-    document.getElementById("btn-escanear").style.display = "inline-block";
-    document.getElementById("btn-cancelar").style.display = "none";
-  }
-
-
-
-  async function cargarProductosEnSelect() {
-  const select = document.getElementById("productoPromo");
-  select.innerHTML = "<option value=''>-- Selecciona un producto --</option>";
-  const snap = await db.collection(`negocios/${negocioId}/productos`).get();
-  snap.forEach(doc => {
-    const opt = document.createElement("option");
-    opt.value = doc.id;
-    opt.textContent = doc.data().nombre;
-    select.appendChild(opt);
-  });
-}
-
-async function guardarPromocion() {
-  const productoId = document.getElementById("productoPromo").value;
-  const cantidad = parseInt(document.getElementById("cantidadPromo").value);
-  const precio = parseFloat(document.getElementById("precioPromo").value);
-
-  if (!productoId || isNaN(cantidad) || isNaN(precio)) {
-    mostrarToast("⚠️ Completa todos los campos.", "error");
-    return;
-  }
-
-  await db.collection(`negocios/${negocioId}/productos/${productoId}/promociones`).add({
-    cantidadMinima: cantidad,
-    precioPromocional: precio
-  });
-
-  mostrarToast("🎉 Promoción guardada correctamente", "success");
-  document.getElementById("cantidadPromo").value = "";
-  document.getElementById("precioPromo").value = "";
-  mostrarPromocionesProducto(); // recargar promos visibles
-}
-
-async function mostrarPromocionesProducto() {
-  const productoId = document.getElementById("productoPromo").value;
-  if (!productoId) return;
-
-  const ul = document.getElementById("lista-promos");
-  ul.innerHTML = "Cargando promociones...";
-
-  const snap = await db.collection(`negocios/${negocioId}/productos/${productoId}/promociones`).orderBy("cantidadMinima").get();
-
-  if (snap.empty) {
-    ul.innerHTML = "<li>Este producto no tiene promociones registradas.</li>";
-    return;
-  }
-
-  ul.innerHTML = "";
-  snap.forEach(doc => {
-    const d = doc.data();
-    const li = document.createElement("li");
-    li.textContent = `✅ ${d.cantidadMinima} x $${d.precioPromocional}`;
-    ul.appendChild(li);
-  });
-}
-
-
-
-
-
-
-
-</script>
-
+  </script>
 </body>
 </html>

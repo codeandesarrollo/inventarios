@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Agregar Producto</title>
+
+  <!-- Firebase SDKs (compat) -->
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/quagga/0.12.1/quagga.min.js"></script>
+
+  <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      margin: 0;
+      padding: 20px;
+      background-color: #f4f6f9;
+    }
+    h1 {
+      margin-top: 0;
+      text-align: center;
+    }
+    #usuario-info {
+      text-align: center;
+      margin-bottom: 20px;
+      font-weight: bold;
+    }
+    input[type="text"],
+    input[type="number"] {
+      width: 100%;
+      padding: 10px;
+      font-size: 16px;
+      margin-bottom: 15px;
+      box-sizing: border-box;
+    }
+    .scanner-container {
+      width: 100%;
+      max-width: 350px;
+      height: 220px;
+      border: 2px solid #007bff;
+      border-radius: 8px;
+      background-color: #000;
+      position: relative;
+      overflow: hidden;
+      margin: 10px auto;
+    }
+    .confirm-btn {
+      background-color: #27ae60;
+      color: white;
+      padding: 12px;
+      font-size: 16px;
+      border: none;
+      border-radius: 6px;
+      width: 100%;
+      margin-top: 15px;
+      cursor: pointer;
+    }
+    .back-btn {
+      margin-top: 10px;
+      text-align: center;
+    }
+    .back-btn a {
+      text-decoration: none;
+      color: #2980b9;
+    }
+    .toast {
+      position: fixed;
+      bottom: 30px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #323232;
+      color: white;
+      padding: 14px 24px;
+      border-radius: 8px;
+      font-size: 16px;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s ease;
+      z-index: 9999;
+    }
+    .toast.show {
+      opacity: 1;
+      pointer-events: auto;
+    }
+    .toast.success { background: #27ae60; }
+    .toast.error   { background: #c0392b; }
+    #btn-cancelar {
+      display: none;
+      background: #555;
+      color: white;
+      padding: 10px;
+      width: 100%;
+      margin-bottom: 15px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>Agregar Producto</h1>
+  <p id="usuario-info"></p>
+
+  <input type="text" id="nombre" placeholder="Nombre del producto">
+  <input type="number" id="precioNeto" placeholder="Precio Neto">
+  <input type="number" id="precioPublico" placeholder="Precio Público">
+  <input type="number" id="stock" placeholder="Cantidad">
+  <input type="text" id="categoria" placeholder="Categoría">
+  <input type="text" id="codigoproducto" placeholder="Código de producto">
+
+  <div id="scanner" class="scanner-container"></div>
+  <button id="btn-escanear" onclick="iniciarScanner()">📷 Escanear código de barras</button>
+  <button id="btn-cancelar" onclick="detenerScanner()">✖ Cancelar escaneo</button>
+
+  <button class="confirm-btn" onclick="agregarProducto()">➕ Agregar Producto</button>
+
+  <div style="text-align:center; margin-top:20px;">
+    <a href="dashboard.html" style="
+      display:inline-block;
+      padding:10px 20px;
+      background:#2980b9;
+      color:white;
+      border-radius:6px;
+      text-decoration:none;
+      font-weight:bold;
+    ">
+      ⬅ Volver al Dashboard
+    </a>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <script>
+    // 1) Chequeo de sesión
+    const usuario = JSON.parse(localStorage.getItem("usuario"));
+    const negocioId = localStorage.getItem("negocioId");
+    if (!usuario || !negocioId) {
+      alert("Debes iniciar sesión para agregar productos");
+      window.location.href = "index.html";
+    }
+    document.getElementById("usuario-info").textContent =
+      `Usuario: ${usuario.username}`;
+
+    // 2) Inicializar Firebase
+    const firebaseConfig = {
+      apiKey: "AIzaSyAhsavAS72wIk1X-q-aukHeyK-GpAWXVl4",
+      authDomain: "appinventario-fab49.firebaseapp.com",
+      projectId: "appinventario-fab49"
+    };
+    firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+
+// habilitar persistencia offline (y sincronización entre pestañas)
+firebase.firestore().enablePersistence({ synchronizeTabs: true })
+  .then(() => console.log("📦 Firestore offline persistence habilitada"))
+  .catch(err => {
+    if (err.code === 'failed-precondition') {
+      console.warn("⚠️ No se pudo habilitar persistencia: varias pestañas abiertas.");
+    } else if (err.code === 'unimplemented') {
+      console.warn("⚠️ Persistencia offline no soportada en este navegador.");
+    }
+  });
+
+
+    // 3) Toast
+    function mostrarToast(mensaje, tipo = "success") {
+      const t = document.getElementById("toast");
+      t.textContent = mensaje;
+      t.className = `toast show ${tipo}`;
+      setTimeout(() => t.className = "toast", 3000);
+    }
+
+    // 4) Agregar Producto
+    async function agregarProducto() {
+      const nombre       = document.getElementById("nombre").value.trim();
+      const precioNeto   = parseFloat(document.getElementById("precioNeto").value);
+      const precioPublico= parseFloat(document.getElementById("precioPublico").value);
+      const stock        = parseInt(document.getElementById("stock").value);
+      const categoria    = document.getElementById("categoria").value.trim();
+      const codigo       = document.getElementById("codigoproducto").value.trim();
+
+      if (!nombre || isNaN(precioNeto) || isNaN(precioPublico)
+          || isNaN(stock) || !categoria || !codigo) {
+        return mostrarToast("⚠️ Completa todos los campos.", "error");
+      }
+
+      try {
+        const existe = await db
+          .collection(`negocios/${negocioId}/productos`)
+          .where("codigo","==",codigo)
+          .get();
+
+        if (!existe.empty) {
+          return mostrarToast("🚫 Código ya registrado.", "error");
+        }
+
+        await db.collection(`negocios/${negocioId}/productos`).add({
+          nombre, precioNeto, precioPublico, stock, categoria, codigo
+        });
+
+        mostrarToast("✅ Producto agregado.");
+        // limpiar campos
+        ["nombre","precioNeto","precioPublico","stock","categoria","codigoproducto"]
+          .forEach(id => document.getElementById(id).value = "");
+      } catch (err) {
+        console.error(err);
+        mostrarToast("❌ Error al guardar.", "error");
+      }
+    }
+
+    // 5) Scanner de código de barras
+    function iniciarScanner() {
+      document.getElementById("btn-escanear").style.display   = "none";
+      document.getElementById("btn-cancelar").style.display  = "block";
+
+      Quagga.init({
+        inputStream: {
+          name: "Live",
+          type: "LiveStream",
+          target: document.querySelector('#scanner'),
+          constraints: { facingMode: "environment" }
+        },
+        decoder: { readers: ["ean_reader","code_128_reader"] }
+      }, err => {
+        if (err) {
+          console.error(err);
+          mostrarToast("❌ No se pudo iniciar el escáner.", "error");
+          return;
+        }
+        Quagga.start();
+      });
+
+      Quagga.onDetected(data => {
+        document.getElementById("codigoproducto").value =
+          data.codeResult.code;
+        detenerScanner();
+      });
+    }
+
+    function detenerScanner() {
+      Quagga.stop();
+      Quagga.offDetected();
+      document.getElementById("scanner").innerHTML = "";
+      document.getElementById("btn-escanear").style.display   = "block";
+      document.getElementById("btn-cancelar").style.display  = "none";
+    }
+  </script>
+</body>
+</html>

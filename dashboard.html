@@ -87,9 +87,11 @@
 
 <div class="card-grid">
   <div class="card" onclick="mostrarSeccion('agregar')">➕ Agregar Producto</div>
-  <div class="card" onclick="mostrarSeccion('venta')">🛒 Registrar Venta</div>
+  <a class="card" href="venta.html">🛒 Registrar Venta</a>
   <div class="card" onclick="mostrarSeccion('merma')">⚠️ Registrar Merma</div>
   <div class="card" onclick="mostrarSeccion('inventario')">📦 Inventario</div>
+  <div class="card" onclick="mostrarSeccion('promociones')">🎁 Promociones</div>
+
 </div>
 
 <div id="agregar" class="section">
@@ -113,6 +115,30 @@
     <tbody id="tabla-productos"></tbody>
   </table>
 </div>
+
+
+<div id="promociones" class="section">
+  <h2>Agregar Promoción por Producto</h2>
+
+  <label>Producto:</label>
+  <select id="productoPromo" style="padding:10px; width:100%; font-size:16px;"></select>
+
+  <label>Cantidad mínima:</label>
+  <input type="number" id="cantidadPromo" placeholder="Ej: 6">
+
+  <label>Precio promocional por paquete:</label>
+  <input type="number" id="precioPromo" placeholder="Ej: 130">
+
+  <button onclick="guardarPromocion()">Guardar Promoción</button>
+
+  <div style="margin-top: 15px;">
+    <button onclick="mostrarPromocionesProducto()">📋 Ver promociones del producto</button>
+    <ul id="lista-promos" style="margin-top:10px;"></ul>
+  </div>
+</div>
+
+
+
 
 <div id="merma" class="section">
   <h2>Merma (próximamente)</h2>
@@ -150,12 +176,16 @@
       `Usuario: ${usuario.username} | Negocio: ${negocioNombre}`;
   }
 
-  function mostrarSeccion(id) {
-    document.querySelectorAll(".section").forEach(s => s.classList.remove("active"));
-    document.getElementById(id).classList.add("active");
-    if (id === "venta") cargarProductos();
-    if (id === "inventario") cargarInventario();
-  }
+ 
+function mostrarSeccion(id) {
+  document.querySelectorAll(".section").forEach(s => s.classList.remove("active"));
+  document.getElementById(id).classList.add("active");
+
+  if (id === "venta") cargarProductos();
+  if (id === "inventario") cargarInventario();
+  if (id === "promociones") cargarProductosEnSelect();
+}
+
 
   function mostrarToast(mensaje, tipo = "success") {
     const toast = document.getElementById("toast");
@@ -315,6 +345,71 @@
     document.getElementById("btn-escanear").style.display = "inline-block";
     document.getElementById("btn-cancelar").style.display = "none";
   }
+
+
+
+  async function cargarProductosEnSelect() {
+  const select = document.getElementById("productoPromo");
+  select.innerHTML = "<option value=''>-- Selecciona un producto --</option>";
+  const snap = await db.collection(`negocios/${negocioId}/productos`).get();
+  snap.forEach(doc => {
+    const opt = document.createElement("option");
+    opt.value = doc.id;
+    opt.textContent = doc.data().nombre;
+    select.appendChild(opt);
+  });
+}
+
+async function guardarPromocion() {
+  const productoId = document.getElementById("productoPromo").value;
+  const cantidad = parseInt(document.getElementById("cantidadPromo").value);
+  const precio = parseFloat(document.getElementById("precioPromo").value);
+
+  if (!productoId || isNaN(cantidad) || isNaN(precio)) {
+    mostrarToast("⚠️ Completa todos los campos.", "error");
+    return;
+  }
+
+  await db.collection(`negocios/${negocioId}/productos/${productoId}/promociones`).add({
+    cantidadMinima: cantidad,
+    precioPromocional: precio
+  });
+
+  mostrarToast("🎉 Promoción guardada correctamente", "success");
+  document.getElementById("cantidadPromo").value = "";
+  document.getElementById("precioPromo").value = "";
+  mostrarPromocionesProducto(); // recargar promos visibles
+}
+
+async function mostrarPromocionesProducto() {
+  const productoId = document.getElementById("productoPromo").value;
+  if (!productoId) return;
+
+  const ul = document.getElementById("lista-promos");
+  ul.innerHTML = "Cargando promociones...";
+
+  const snap = await db.collection(`negocios/${negocioId}/productos/${productoId}/promociones`).orderBy("cantidadMinima").get();
+
+  if (snap.empty) {
+    ul.innerHTML = "<li>Este producto no tiene promociones registradas.</li>";
+    return;
+  }
+
+  ul.innerHTML = "";
+  snap.forEach(doc => {
+    const d = doc.data();
+    const li = document.createElement("li");
+    li.textContent = `✅ ${d.cantidadMinima} x $${d.precioPromocional}`;
+    ul.appendChild(li);
+  });
+}
+
+
+
+
+
+
+
 </script>
 
 </body>

@@ -1,9 +1,11 @@
-const CACHE_NAME = 'inventario-cache-v2';  // sube versión
-const urlsToCache = [
+// service-worker.js
+const CACHE_NAME = 'inventario-cache-v3';
+const urlsToPreCache = [
   '/',
   '/index.html',
   '/dashboard.html',
-  '/agregaproductos.html',    // ← tu formulario de venta
+  '/agregaproductos.html',
+  '/login.html',
   '/main.js',
   '/manifest.json',
   '/icon-192.png',
@@ -13,14 +15,14 @@ const urlsToCache = [
 self.addEventListener('install', event => {
   event.waitUntil(
     caches.open(CACHE_NAME)
-      .then(cache => cache.addAll(urlsToCache))
+      .then(cache => cache.addAll(urlsToPreCache))
       .then(() => self.skipWaiting())
   );
 });
 
 self.addEventListener('activate', event => {
+  // Si NO quieres borrar nunca cachés antiguas, comenta todo este bloque.
   event.waitUntil(
-    // eliminar cachés antiguas
     caches.keys().then(keys =>
       Promise.all(
         keys
@@ -32,19 +34,28 @@ self.addEventListener('activate', event => {
 });
 
 self.addEventListener('fetch', event => {
-  // si es navegación a una página HTML que no está en el caché,
-  // devolvemos index.html en modo App Shell:
-  if (event.request.mode === 'navigate') {
-    event.respondWith(
-      fetch(event.request).catch(() =>
-        caches.match('/index.html')
-      )
-    );
-    return;
-  }
+  // Solo interceptamos GET
+  if (event.request.method !== 'GET') return;
 
   event.respondWith(
-    caches.match(event.request)
-      .then(resp => resp || fetch(event.request))
+    caches.match(event.request).then(cachedResp => {
+      if (cachedResp) {
+        // 1) Si está en caché, lo devolvemos inmediatamente
+        return cachedResp;
+      }
+      // 2) Si no, lo pedimos a red y lo almacenamos
+      return fetch(event.request).then(networkResp => {
+        return caches.open(CACHE_NAME).then(cache => {
+          // Clonamos porque la respuesta solo se puede leer una vez
+          cache.put(event.request, networkResp.clone());
+          return networkResp;
+        });
+      }).catch(() => {
+        // 3) Si estamos offline y es navegación de página, leo el shell
+        if (event.request.mode === 'navigate') {
+          return caches.match('/index.html');
+        }
+      });
+    })
   );
 });

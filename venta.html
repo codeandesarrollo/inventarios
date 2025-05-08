@@ -240,66 +240,61 @@
     }
 
     // ——— 8) Confirmar Venta ———
-    async function confirmarVenta() {
-      if (!carrito.length) return alert("Carrito vacío");
+async function confirmarVenta() {
+  if (!carrito.length) return alert("Carrito vacío");
 
-      const isOnline = navigator.onLine;
-      const batch    = db.batch();
-      const ventaProductos = [];
-      let totalVenta = 0;
+  // 1) Capturamos si estamos online
+  const isOnline = navigator.onLine;
 
-      for (const p of carrito) {
-        const refP = db.collection(`negocios/${negocioId}/productos`).doc(p.id);
-        const nuevoStock = p.stock - p.cantidad;
-        if (nuevoStock < 0) return alert(`Stock insuficiente para ${p.nombre}`);
-        batch.update(refP, { stock: nuevoStock });
+  // 2) Preparamos el batch (igual que antes)
+  const batch = db.batch();
+  const ventaProductos = [];
+  let totalVenta = 0;
+  for (const p of carrito) {
+    // … tu lógica para actualizar stock y armar ventaProductos …
+  }
+  const refV = db.collection(`negocios/${negocioId}/ventas`).doc();
+  batch.set(refV, {
+    fecha:         firebase.firestore.FieldValue.serverTimestamp(),
+    total:         parseFloat(totalVenta.toFixed(2)),
+    cantidadTotal: carrito.reduce((s,p)=>s+p.cantidad, 0),
+    productos:     ventaProductos,
+    usuario:       usuario.username
+  });
 
-        let subtotal = p.precio * p.cantidad;
-        let promoAplicada = "Ninguna";
-        for (const promo of p.promociones) {
-          if (p.cantidad >= promo.cantidadMinima) {
-            const packs = Math.floor(p.cantidad / promo.cantidadMinima);
-            const sobr = p.cantidad % promo.cantidadMinima;
-            subtotal = packs * promo.precioPromocional + sobr * p.precio;
-            promoAplicada = `${promo.cantidadMinima}x $${promo.precioPromocional}`;
-            break;
-          }
-        }
-        totalVenta += subtotal;
-        ventaProductos.push({
-          productoId:     p.id,
-          nombre:         p.nombre,
-          cantidad:       p.cantidad,
-          precioUnitario: p.precio,
-          precioNeto:     p.precioNeto,
-          subtotal:       parseFloat(subtotal.toFixed(2)),
-          promocion:      promoAplicada
-        });
-      }
+  try {
+    // 3) Commit — en offline, esto resuelve cuando queda en cache
+    await batch.commit();
 
-      const refV = db.collection(`negocios/${negocioId}/ventas`).doc();
-      batch.set(refV, {
-        fecha:         firebase.firestore.FieldValue.serverTimestamp(),
-        total:         parseFloat(totalVenta.toFixed(2)),
-        cantidadTotal: carrito.reduce((s,p)=>s+p.cantidad, 0),
-        productos:     ventaProductos,
-        usuario:       usuario.username
-      });
-
-      try {
-        await batch.commit();
-        if (isOnline) {
-          alert("✅ Venta registrada correctamente");
-        } else {
-          alert("✅ Venta registrada en modo OFFLINE. Se sincronizará cuando vuelvas a conectar.");
-        }
-        carrito.length = 0;
-        renderCarrito();
-        cargarProductos();
-      } catch {
-        alert("❌ Error al registrar la venta");
-      }
+    // 4) **Notificación inmediata** según el estado capturado
+    if (isOnline) {
+      alert("✅ Venta registrada correctamente (ONLINE)");
+    } else {
+      alert("✅ Venta realizada en modo OFFLINE");
     }
+
+    // 5) (Opcional) listener para avisar cuando se suba al servidor
+    if (!isOnline) {
+      db.collection(`negocios/${negocioId}/ventas`)
+        .doc(refV.id)
+        .onSnapshot({ includeMetadataChanges: true }, snap => {
+          if (!snap.metadata.hasPendingWrites) {
+            alert("🔄 Venta offline sincronizada con el servidor");
+          }
+        });
+    }
+
+    // 6) Limpiar UI y recargar productos
+    carrito.length = 0;
+    renderCarrito();
+    cargarProductos();
+
+  } catch (err) {
+    console.error(err);
+    alert("❌ Error al registrar la venta");
+  }
+}
+
 
     // ——— 9) Cerrar Caja ———
     async function cerrarCaja() {

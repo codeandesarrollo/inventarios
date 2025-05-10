@@ -226,62 +226,64 @@
       renderCarrito();
     }
 
-    async function confirmarVenta() {
-      if (!carrito.length) return alert("Carrito vacío");
+async function confirmarVenta() {
+  if (!carrito.length) return alert("Carrito vacío");
 
-      const btn = document.getElementById("btn-confirmar");
-      btn.disabled = true;
-      btn.textContent = "Procesando...";
+  const isOnline = navigator.onLine;
+  const batch = db.batch();
+  const ventaProductos = [];
+  let totalVenta = 0;
 
-      const isOnline = navigator.onLine;
-      const batch = db.batch();
-      const ventaProductos = [];
-      let totalVenta = 0;
+  for (const p of carrito) {
+    ventaProductos.push({
+      productoId: p.id,
+      nombre: p.nombre,
+      cantidad: p.cantidad,
+      precioUnitario: p.precio,
+      subtotal: parseFloat((p.precio * p.cantidad).toFixed(2))
+    });
 
-      for (const p of carrito) {
-        ventaProductos.push({
-          productoId: p.id,
-          nombre: p.nombre,
-          cantidad: p.cantidad,
-          precioUnitario: p.precio,
-          subtotal: parseFloat((p.precio * p.cantidad).toFixed(2))
+    const prodRef = db.collection(`negocios/${negocioId}/productos`).doc(p.id);
+    batch.update(prodRef, {
+      stock: firebase.firestore.FieldValue.increment(-p.cantidad)
+    });
+
+    totalVenta += p.precio * p.cantidad;
+  }
+
+  const refV = db.collection(`negocios/${negocioId}/ventas`).doc();
+  batch.set(refV, {
+    fecha:         firebase.firestore.FieldValue.serverTimestamp(),
+    fechaTexto:    new Date().toLocaleString(),
+    total:         parseFloat(totalVenta.toFixed(2)),
+    cantidadTotal: carrito.reduce((s,p)=>s+p.cantidad, 0),
+    productos:     ventaProductos,
+    usuario:       usuario.username
+  });
+
+  if (!isOnline) {
+    alert("✅ Venta registrada en modo OFFLINE.\nSe sincronizará cuando vuelva la conexión.");
+    carrito.length = 0;
+    renderCarrito();
+    cargarProductos();
+  }
+
+  try {
+    await batch.commit();
+
+    if (isOnline) {
+      alert("✅ Venta registrada correctamente (ONLINE)");
+      carrito.length = 0;
+      renderCarrito();
+      cargarProductos();
+    } else {
+      db.collection(`negocios/${negocioId}/ventas`)
+        .doc(refV.id)
+        .onSnapshot({ includeMetadataChanges: true }, snap => {
+          if (!snap.metadata.hasPendingWrites) {
+            alert("🔄 Venta offline sincronizada con el servidor");
+          }
         });
-
-        const prodRef = db.collection(`negocios/${negocioId}/productos`).doc(p.id);
-        batch.update(prodRef, {
-          stock: firebase.firestore.FieldValue.increment(-p.cantidad)
-        });
-
-        totalVenta += p.precio * p.cantidad;
-      }
-
-      const refV = db.collection(`negocios/${negocioId}/ventas`).doc();
-      batch.set(refV, {
-        fecha:         firebase.firestore.FieldValue.serverTimestamp(),
-        fechaTexto:    new Date().toLocaleString(),
-        total:         parseFloat(totalVenta.toFixed(2)),
-        cantidadTotal: carrito.reduce((s,p)=>s+p.cantidad, 0),
-        productos:     ventaProductos,
-        usuario:       usuario.username
-      });
-
-      if (!isOnline) {
-        alert("✅ Venta registrada en modo OFFLINE.\nSe sincronizará cuando vuelva la conexión.");
-      }
-
-      try {
-        await batch.commit();
-
-        if (isOnline) {
-          alert("✅ Venta registrada correctamente (ONLINE)");
-        } else {
-          db.collection(`negocios/${negocioId}/ventas`)
-            .doc(refV.id)
-            .onSnapshot({ includeMetadataChanges: true }, snap => {
-              if (!snap.metadata.hasPendingWrites) {
-                alert("🔄 Venta offline sincronizada con el servidor");
-              }
-            });
         }
 
         carrito.length = 0;

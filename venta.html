@@ -262,37 +262,30 @@ async function confirmarVenta() {
     usuario:       usuario.username
   });
 
-  try {
-    // 3) Commit — en offline, esto resuelve cuando queda en cache
-    await batch.commit();
+try {
+  await batch.commit();
 
-    // 4) **Notificación inmediata** según el estado capturado
-    if (isOnline) {
-      alert("✅ Venta registrada correctamente (ONLINE)");
-    } else {
-      alert("✅ Venta realizada en modo OFFLINE");
-    }
+  alert("✅ Venta registrada correctamente");
 
-    // 5) (Opcional) listener para avisar cuando se suba al servidor
-    if (!isOnline) {
-      db.collection(`negocios/${negocioId}/ventas`)
-        .doc(refV.id)
-        .onSnapshot({ includeMetadataChanges: true }, snap => {
-          if (!snap.metadata.hasPendingWrites) {
-            alert("🔄 Venta offline sincronizada con el servidor");
-          }
-        });
-    }
+  carrito.length = 0;
+  renderCarrito();
+  cargarProductos();
 
-    // 6) Limpiar UI y recargar productos
-    carrito.length = 0;
-    renderCarrito();
-    cargarProductos();
-
-  } catch (err) {
-    console.error(err);
-    alert("❌ Error al registrar la venta");
+  if (!isOnline) {
+    db.collection(`negocios/${negocioId}/ventas`)
+      .doc(refV.id)
+      .onSnapshot({ includeMetadataChanges: true }, snap => {
+        if (!snap.metadata.hasPendingWrites) {
+          alert("🔄 Venta offline sincronizada con el servidor");
+        }
+      });
   }
+
+} catch (err) {
+  console.error(err);
+  alert("❌ Error al registrar la venta");
+}
+
 }
 
 

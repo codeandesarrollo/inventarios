@@ -1,11 +1,9 @@
-<!-- registrarVenta.html -->
 <!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Registrar Venta</title>
-  <!-- Firebase -->
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
   <style>
@@ -50,7 +48,7 @@
   </table>
   <div class="total" id="total-carrito">Total: $0.00</div>
   <div class="action-buttons">
-    <button class="confirm-btn" onclick="confirmarVenta()">✅ Confirmar Venta</button>
+    <button class="confirm-btn" id="btn-confirmar" onclick="confirmarVenta()">✅ Confirmar Venta</button>
     <button class="confirm-btn cerrar-btn" onclick="cerrarCaja()">🔒 Cerrar Caja</button>
   </div>
 
@@ -59,17 +57,14 @@
   </div>
 
   <script>
-    // ——— 1) Sesión ———
-    const usuario   = JSON.parse(localStorage.getItem("usuario"));
+    const usuario = JSON.parse(localStorage.getItem("usuario"));
     const negocioId = localStorage.getItem("negocioId");
     if (!usuario || !negocioId) {
       alert("Debes iniciar sesión para registrar la venta");
       window.location.href = "index.html";
     }
-    document.getElementById("usuario-info").textContent =
-      `Usuario: ${usuario.username}`;
+    document.getElementById("usuario-info").textContent = `Usuario: ${usuario.username}`;
 
-    // ——— 2) Firebase ———
     firebase.initializeApp({
       apiKey:    "AIzaSyAhsavAS72wIk1X-q-aukHeyK-GpAWXVl4",
       authDomain:"appinventario-fab49.firebaseapp.com",
@@ -79,16 +74,12 @@
     db.enablePersistence({ synchronizeTabs: true })
       .catch(err => console.warn("Persistencia no habilitada:", err));
 
-    // ——— 3) Variable para cierre ———
     let lastCierreDate = null;
     async function initCierre() {
       try {
         const opts = navigator.onLine ? { source: 'default' } : { source: 'cache' };
-        const snap = await db
-          .collection(`negocios/${negocioId}/cierresCaja`)
-          .orderBy("fecha","desc")
-          .limit(1)
-          .get(opts);
+        const snap = await db.collection(`negocios/${negocioId}/cierresCaja`)
+                             .orderBy("fecha","desc").limit(1).get(opts);
         if (!snap.empty) {
           lastCierreDate = snap.docs[0].data().fecha;
         } else {
@@ -103,10 +94,8 @@
       }
     }
 
-    // ——— 4) Carrito en memoria ———
     const carrito = [];
 
-    // ——— 5) Cargar productos TOP 4 con fallback offline ———
     async function cargarProductos() {
       const cont = document.getElementById("lista-productos");
       cont.innerHTML = "";
@@ -175,7 +164,6 @@
       }
     }
 
-    // ——— 6) Agregar al carrito ———
     async function agregarAlCarrito(id,nombre,precioPublico,stock,precioNeto) {
       let item = carrito.find(x=>x.id===id);
       if (!item) {
@@ -193,7 +181,6 @@
       renderCarrito();
     }
 
-    // ——— 7) Renderizar carrito ———
     function renderCarrito() {
       const tbody = document.getElementById("tabla-carrito");
       tbody.innerHTML = "";
@@ -213,8 +200,7 @@
         tr.innerHTML = `
           <td>${p.nombre}</td>
           <td>
-            <input type="number" min="1" max="${p.stock}"
-                   value="${p.cantidad}"
+            <input type="number" min="1" max="${p.stock}" value="${p.cantidad}"
                    onchange="cambiarCantidad('${p.id}',this.value)">
           </td>
           <td>$${p.precio}</td>
@@ -223,14 +209,15 @@
         `;
         tbody.appendChild(tr);
       });
-      document.getElementById("total-carrito")
-        .textContent = `Total: $${total.toFixed(2)}`;
+      document.getElementById("total-carrito").textContent = `Total: $${total.toFixed(2)}`;
     }
+
     function eliminarDelCarrito(id) {
       const i = carrito.findIndex(x=>x.id===id);
       if (i>-1) carrito.splice(i,1);
       renderCarrito();
     }
+
     function cambiarCantidad(id,val) {
       const n = parseInt(val,10);
       const item = carrito.find(x=>x.id===id);
@@ -239,118 +226,121 @@
       renderCarrito();
     }
 
-    // ——— 8) Confirmar Venta ———
-async function confirmarVenta() {
-  if (!carrito.length) return alert("Carrito vacío");
+    async function confirmarVenta() {
+      if (!carrito.length) return alert("Carrito vacío");
 
-  // 1) Capturamos si estamos online
-  const isOnline = navigator.onLine;
+      const btn = document.getElementById("btn-confirmar");
+      btn.disabled = true;
+      btn.textContent = "Procesando...";
 
-  // 2) Preparamos el batch (igual que antes)
-  const batch = db.batch();
-  const ventaProductos = [];
-  let totalVenta = 0;
-  for (const p of carrito) {
-    // … tu lógica para actualizar stock y armar ventaProductos …
-  }
-  const refV = db.collection(`negocios/${negocioId}/ventas`).doc();
-  batch.set(refV, {
-    fecha:         firebase.firestore.FieldValue.serverTimestamp(),
-    total:         parseFloat(totalVenta.toFixed(2)),
-    cantidadTotal: carrito.reduce((s,p)=>s+p.cantidad, 0),
-    productos:     ventaProductos,
-    usuario:       usuario.username
-  });
+      const isOnline = navigator.onLine;
+      const batch = db.batch();
+      const ventaProductos = [];
+      let totalVenta = 0;
 
-try {
-  await batch.commit();
+      for (const p of carrito) {
+        ventaProductos.push({
+          productoId: p.id,
+          nombre: p.nombre,
+          cantidad: p.cantidad,
+          precioUnitario: p.precio,
+          subtotal: parseFloat((p.precio * p.cantidad).toFixed(2))
+        });
 
-  alert("✅ Venta registrada correctamente");
+        const prodRef = db.collection(`negocios/${negocioId}/productos`).doc(p.id);
+        batch.update(prodRef, {
+          stock: firebase.firestore.FieldValue.increment(-p.cantidad)
+        });
 
-  carrito.length = 0;
-  renderCarrito();
-  cargarProductos();
+        totalVenta += p.precio * p.cantidad;
+      }
 
-  if (!isOnline) {
-    db.collection(`negocios/${negocioId}/ventas`)
-      .doc(refV.id)
-      .onSnapshot({ includeMetadataChanges: true }, snap => {
-        if (!snap.metadata.hasPendingWrites) {
-          alert("🔄 Venta offline sincronizada con el servidor");
-        }
+      const refV = db.collection(`negocios/${negocioId}/ventas`).doc();
+      batch.set(refV, {
+        fecha:         firebase.firestore.FieldValue.serverTimestamp(),
+        fechaTexto:    new Date().toLocaleString(),
+        total:         parseFloat(totalVenta.toFixed(2)),
+        cantidadTotal: carrito.reduce((s,p)=>s+p.cantidad, 0),
+        productos:     ventaProductos,
+        usuario:       usuario.username
       });
-  }
 
-} catch (err) {
-  console.error(err);
-  alert("❌ Error al registrar la venta");
-}
+      if (!isOnline) {
+        alert("✅ Venta registrada en modo OFFLINE.\nSe sincronizará cuando vuelva la conexión.");
+      }
 
-}
+      try {
+        await batch.commit();
 
+        if (isOnline) {
+          alert("✅ Venta registrada correctamente (ONLINE)");
+        } else {
+          db.collection(`negocios/${negocioId}/ventas`)
+            .doc(refV.id)
+            .onSnapshot({ includeMetadataChanges: true }, snap => {
+              if (!snap.metadata.hasPendingWrites) {
+                alert("🔄 Venta offline sincronizada con el servidor");
+              }
+            });
+        }
 
-    // ——— 9) Cerrar Caja ———
-// ——— 9) Cerrar Caja ———
-// ——— 9) Cerrar Caja ———
-async function cerrarCaja() {
-  if (!confirm("¿Confirma cerrar la caja y registrar resumen?")) return;
+        carrito.length = 0;
+        renderCarrito();
+        cargarProductos();
 
-  // 9.1) Recuperar ventas desde el último cierre
-  const ventasSnap = await db
-    .collection(`negocios/${negocioId}/ventas`)
-    .where("fecha", ">=", lastCierreDate)
-    .get();
-  let totalDia = 0;
-  const ventasUsuario = {};
-  ventasSnap.forEach(doc => {
-    const v = doc.data();
-    const u = v.usuario || "Desconocido";
-    totalDia += v.total || 0;
-    if (!ventasUsuario[u]) ventasUsuario[u] = { count: 0, total: 0 };
-    ventasUsuario[u].count++;
-    ventasUsuario[u].total += v.total || 0;
-  });
+      } catch (err) {
+        console.error(err);
+        alert("❌ Error al registrar la venta");
+      }
 
-  try {
-    // 9.2) Guardar el cierre en Firestore
-    await db.collection(`negocios/${negocioId}/cierresCaja`).add({
-      fecha:            firebase.firestore.FieldValue.serverTimestamp(),
-      usuario:          usuario.username,
-      totalDia:         parseFloat(totalDia.toFixed(2)),
-      ventasPorUsuario: ventasUsuario
-    });
+      btn.disabled = false;
+      btn.textContent = "✅ Confirmar Venta";
+    }
 
-    // 9.3) Notificar al usuario incluyendo el total vendido
-    alert(`✅ Caja cerrada correctamente.\nTotal vendido: $${totalDia.toFixed(2)}`);
+    async function cerrarCaja() {
+      if (!confirm("¿Confirma cerrar la caja y registrar resumen?")) return;
 
-    // 9.4) Actualizar lastCierreDate
-    lastCierreDate = firebase.firestore.Timestamp.now();
-    localStorage.setItem('lastCierreDate', lastCierreDate.toMillis());
+      const ventasSnap = await db
+        .collection(`negocios/${negocioId}/ventas`)
+        .where("fecha", ">=", lastCierreDate)
+        .get();
 
-  } catch (err) {
-    console.error(err);
-    alert("❌ Error al cerrar la caja");
-  }
-}
+      let totalDia = 0;
+      const ventasUsuario = {};
+      ventasSnap.forEach(doc => {
+        const v = doc.data();
+        const u = v.usuario || "Desconocido";
+        totalDia += v.total || 0;
+        if (!ventasUsuario[u]) ventasUsuario[u] = { count: 0, total: 0 };
+        ventasUsuario[u].count++;
+        ventasUsuario[u].total += v.total || 0;
+      });
 
+      try {
+        await db.collection(`negocios/${negocioId}/cierresCaja`).add({
+          fecha: firebase.firestore.FieldValue.serverTimestamp(),
+          usuario: usuario.username,
+          totalDia: parseFloat(totalDia.toFixed(2)),
+          ventasPorUsuario: ventasUsuario
+        });
 
+        alert(`✅ Caja cerrada correctamente.\nTotal vendido: $${totalDia.toFixed(2)}`);
+        lastCierreDate = firebase.firestore.Timestamp.now();
+        localStorage.setItem('lastCierreDate', lastCierreDate.toMillis());
+      } catch (err) {
+        console.error(err);
+        alert("❌ Error al cerrar la caja");
+      }
+    }
 
-    // ——— 10) Filtro de búsqueda ———
-    document.getElementById("busqueda")
-      .addEventListener("input", e=>{ /* ... */ });
-
-    // ——— 11) Inicializar todo ———
-    initCierre().then(()=>{
+    initCierre().then(() => {
       cargarProductos();
       renderCarrito();
     });
 
-    // ——— 12) Registrar Service Worker ———
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker
-          .register('/service-worker.js')
-          .catch(()=>{});
+        navigator.serviceWorker.register('/service-worker.js').catch(()=>{});
       });
     }
   </script>

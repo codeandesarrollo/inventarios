@@ -285,6 +285,10 @@
         renderCarrito();
         cargarProductos();
 
+           const ventaInput = document.getElementById('busqueda');
+    ventaInput.value = '';
+    ventaInput.focus();
+
         if (!isOnline) {
           db.collection(`negocios/${negocioId}/ventas`).doc(refV.id)
             .onSnapshot({ includeMetadataChanges: true }, snap => {

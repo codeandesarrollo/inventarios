@@ -22,13 +22,7 @@
     .cerrar-btn  { background:#e67e22; color:#fff; margin-top:10px; }
     .back-btn    { text-align:center; margin-top:20px; }
     .back-btn a  { display:inline-block; padding:10px 20px; background:#2980b9; color:#fff; border-radius:6px; text-decoration:none; font-weight:bold; }
-    .action-buttons {
-      display: flex;
-      flex-direction: column;
-      gap: 70px;
-      max-width: 300px;
-      margin: 30px auto 0;
-    }
+    .action-buttons { display:flex; flex-direction:column; gap:70px; max-width:300px; margin:30px auto 0; }
   </style>
 </head>
 <body>
@@ -74,17 +68,27 @@
     db.enablePersistence({ synchronizeTabs: true })
       .catch(err => console.warn("Persistencia no habilitada:", err));
 
+    // --- detectar tipo de negocio ---
+    let tipoNegocio = "";
+    async function cargarTipoNegocio() {
+      try {
+        const doc = await db.collection("negocios").doc(negocioId).get();
+        if (doc.exists) tipoNegocio = doc.data().tipo;
+      } catch (e) {
+        console.error("Error cargando tipo de negocio:", e);
+      }
+    }
+
+    // cierre de caja
     let lastCierreDate = null;
     async function initCierre() {
       try {
         const opts = navigator.onLine ? { source: 'default' } : { source: 'cache' };
         const snap = await db.collection(`negocios/${negocioId}/cierresCaja`)
                              .orderBy("fecha","desc").limit(1).get(opts);
-        if (!snap.empty) {
-          lastCierreDate = snap.docs[0].data().fecha;
-        } else {
-          lastCierreDate = firebase.firestore.Timestamp.fromDate(new Date(0));
-        }
+        lastCierreDate = !snap.empty
+          ? snap.docs[0].data().fecha
+          : firebase.firestore.Timestamp.fromDate(new Date(0));
         localStorage.setItem('lastCierreDate', lastCierreDate.toMillis());
       } catch {
         const cache = localStorage.getItem('lastCierreDate');
@@ -164,19 +168,31 @@
       }
     }
 
-    async function agregarAlCarrito(id,nombre,precioPublico,stock,precioNeto) {
-      let item = carrito.find(x=>x.id===id);
+    // --- MODIFICADO: monto en pesos para miscelánea/cremería ---
+    async function agregarAlCarrito(id, nombre, precioPublico, stock, precioNeto) {
+      // determinar cantidad a agregar
+      let cantidadToAdd = 1;
+      if (tipoNegocio === "miscelanea" || tipoNegocio === "cremeria") {
+        const monto = prompt(`¿Cuántos pesos de "${nombre}" desea vender?`);
+        const m = parseFloat(monto);
+        if (!m || isNaN(m) || m <= 0) return;
+        cantidadToAdd = parseFloat((m / precioPublico).toFixed(2));
+        if (cantidadToAdd > stock) return alert("Sin stock disponible");
+      }
+
+      let item = carrito.find(x => x.id === id);
       if (!item) {
+        // cargar promociones
         const promSnap = await db
           .collection(`negocios/${negocioId}/productos/${id}/promociones`)
           .orderBy("cantidadMinima","desc")
           .get();
-        const promos = promSnap.docs.map(d=>d.data());
-        item = { id,nombre,precio:precioPublico,precioNeto,cantidad:1,stock,promociones:promos };
+        const promos = promSnap.docs.map(d => d.data());
+        item = { id, nombre, precio: precioPublico, precioNeto, cantidad: cantidadToAdd, stock, promociones: promos };
         carrito.push(item);
       } else {
-        if (item.cantidad + 1 > stock) return alert("Sin stock disponible");
-        item.cantidad++;
+        if (item.cantidad + cantidadToAdd > stock) return alert("Sin stock disponible");
+        item.cantidad += cantidadToAdd;
       }
       renderCarrito();
     }
@@ -189,9 +205,9 @@
         let subtotal = p.precio * p.cantidad;
         for (const promo of p.promociones) {
           if (p.cantidad >= promo.cantidadMinima) {
-            const packs = Math.floor(p.cantidad/promo.cantidadMinima);
+            const packs = Math.floor(p.cantidad / promo.cantidadMinima);
             const sobr = p.cantidad % promo.cantidadMinima;
-            subtotal = packs*promo.precioPromocional + sobr*p.precio;
+            subtotal = packs * promo.precioPromocional + sobr * p.precio;
             break;
           }
         }
@@ -200,7 +216,7 @@
         tr.innerHTML = `
           <td>${p.nombre}</td>
           <td>
-            <input type="number" min="1" max="${p.stock}" value="${p.cantidad}"
+            <input type="number" min="0.01" max="${p.stock}" step="0.01" value="${p.cantidad}"
                    onchange="cambiarCantidad('${p.id}',this.value)">
           </td>
           <td>$${p.precio}</td>
@@ -213,95 +229,78 @@
     }
 
     function eliminarDelCarrito(id) {
-      const i = carrito.findIndex(x=>x.id===id);
-      if (i>-1) carrito.splice(i,1);
+      const i = carrito.findIndex(x => x.id === id);
+      if (i > -1) carrito.splice(i, 1);
       renderCarrito();
     }
 
-    function cambiarCantidad(id,val) {
-      const n = parseInt(val,10);
-      const item = carrito.find(x=>x.id===id);
-      if (!item||isNaN(n)||n<1||n>item.stock) return;
+    function cambiarCantidad(id, val) {
+      const n = parseFloat(val);
+      const item = carrito.find(x => x.id === id);
+      if (!item || isNaN(n) || n <= 0 || n > item.stock) return;
       item.cantidad = n;
       renderCarrito();
     }
 
-async function confirmarVenta() {
-  if (!carrito.length) return alert("Carrito vacío");
+    async function confirmarVenta() {
+      if (!carrito.length) return alert("Carrito vacío");
+      const isOnline = navigator.onLine;
+      const batch = db.batch();
+      const ventaProductos = [];
+      let totalVenta = 0;
 
-  const isOnline = navigator.onLine;
-  const batch = db.batch();
-  const ventaProductos = [];
-  let totalVenta = 0;
-
-  for (const p of carrito) {
-    ventaProductos.push({
-      productoId: p.id,
-      nombre: p.nombre,
-      cantidad: p.cantidad,
-      precioUnitario: p.precio,
-      subtotal: parseFloat((p.precio * p.cantidad).toFixed(2))
-    });
-
-    const prodRef = db.collection(`negocios/${negocioId}/productos`).doc(p.id);
-    batch.update(prodRef, {
-      stock: firebase.firestore.FieldValue.increment(-p.cantidad)
-    });
-
-    totalVenta += p.precio * p.cantidad;
-  }
-
-  const refV = db.collection(`negocios/${negocioId}/ventas`).doc();
-  batch.set(refV, {
-    fecha:         firebase.firestore.FieldValue.serverTimestamp(),
-    fechaTexto:    new Date().toLocaleString(),
-    total:         parseFloat(totalVenta.toFixed(2)),
-    cantidadTotal: carrito.reduce((s,p)=>s+p.cantidad, 0),
-    productos:     ventaProductos,
-    usuario:       usuario.username
-  });
-
-  if (!isOnline) {
-    alert("✅ Venta registrada en modo OFFLINE.\nSe sincronizará cuando vuelva la conexión.");
-    carrito.length = 0;
-    renderCarrito();
-    cargarProductos();
-  }
-
-  try {
-    await batch.commit();
-
-    if (isOnline) {
-      alert("✅ Venta registrada correctamente (ONLINE)");
-      carrito.length = 0;
-      renderCarrito();
-      cargarProductos();
-    } else {
-      db.collection(`negocios/${negocioId}/ventas`)
-        .doc(refV.id)
-        .onSnapshot({ includeMetadataChanges: true }, snap => {
-          if (!snap.metadata.hasPendingWrites) {
-            alert("🔄 Venta offline sincronizada con el servidor");
-          }
+      carrito.forEach(p => {
+        ventaProductos.push({
+          productoId: p.id,
+          nombre: p.nombre,
+          cantidad: p.cantidad,
+          precioUnitario: p.precio,
+          subtotal: parseFloat((p.precio * p.cantidad).toFixed(2))
         });
-        }
+        batch.update(
+          db.doc(`negocios/${negocioId}/productos/${p.id}`),
+          { stock: firebase.firestore.FieldValue.increment(-p.cantidad) }
+        );
+        totalVenta += p.precio * p.cantidad;
+      });
 
+      const refV = db.collection(`negocios/${negocioId}/ventas`).doc();
+      batch.set(refV, {
+        fecha: firebase.firestore.FieldValue.serverTimestamp(),
+        fechaTexto: new Date().toLocaleString(),
+        total: parseFloat(totalVenta.toFixed(2)),
+        cantidadTotal: carrito.reduce((s, p) => s + p.cantidad, 0),
+        productos: ventaProductos,
+        usuario: usuario.username
+      });
+
+      if (!isOnline) {
+        alert("✅ Venta registrada en modo OFFLINE.\nSe sincronizará cuando vuelva la conexión.");
+      }
+
+      try {
+        await batch.commit();
+        if (isOnline) alert("✅ Venta registrada correctamente (ONLINE)");
         carrito.length = 0;
         renderCarrito();
         cargarProductos();
 
+        if (!isOnline) {
+          db.collection(`negocios/${negocioId}/ventas`).doc(refV.id)
+            .onSnapshot({ includeMetadataChanges: true }, snap => {
+              if (!snap.metadata.hasPendingWrites) {
+                alert("🔄 Venta offline sincronizada con el servidor");
+              }
+            });
+        }
       } catch (err) {
         console.error(err);
         alert("❌ Error al registrar la venta");
       }
-
-      btn.disabled = false;
-      btn.textContent = "✅ Confirmar Venta";
     }
 
     async function cerrarCaja() {
       if (!confirm("¿Confirma cerrar la caja y registrar resumen?")) return;
-
       const ventasSnap = await db
         .collection(`negocios/${negocioId}/ventas`)
         .where("fecha", ">=", lastCierreDate)
@@ -314,7 +313,7 @@ async function confirmarVenta() {
         const u = v.usuario || "Desconocido";
         totalDia += v.total || 0;
         if (!ventasUsuario[u]) ventasUsuario[u] = { count: 0, total: 0 };
-        ventasUsuario[u].count++;
+        vendasPorUsuario[u].count++;
         ventasUsuario[u].total += v.total || 0;
       });
 
@@ -325,7 +324,6 @@ async function confirmarVenta() {
           totalDia: parseFloat(totalDia.toFixed(2)),
           ventasPorUsuario: ventasUsuario
         });
-
         alert(`✅ Caja cerrada correctamente.\nTotal vendido: $${totalDia.toFixed(2)}`);
         lastCierreDate = firebase.firestore.Timestamp.now();
         localStorage.setItem('lastCierreDate', lastCierreDate.toMillis());
@@ -335,11 +333,42 @@ async function confirmarVenta() {
       }
     }
 
-    initCierre().then(() => {
-      cargarProductos();
-      renderCarrito();
+    // Listener para lector HID (Enter en #busqueda)
+    const busquedaInput = document.getElementById('busqueda');
+    busquedaInput.addEventListener('keydown', async e => {
+      if (e.key === 'Enter') {
+        const codigo = busquedaInput.value.trim();
+        if (!codigo) return;
+        await buscarYAgregar(codigo);
+        busquedaInput.value = '';
+      }
     });
 
+    async function buscarYAgregar(codigo) {
+      const cache = JSON.parse(localStorage.getItem('productosCache') || '[]');
+      let p = cache.find(p => p.codigo === codigo);
+      if (!p) {
+        const snap = await db
+          .collection(`negocios/${negocioId}/productos`)
+          .where('codigo','==',codigo)
+          .limit(1)
+          .get();
+        if (snap.empty) return alert('🚫 Producto no encontrado');
+        const doc = snap.docs[0];
+        p = { id: doc.id, ...doc.data() };
+      }
+      agregarAlCarrito(p.id, p.nombre, p.precioPublico, p.stock, p.precioNeto);
+    }
+
+    // inicialización en cadena
+    initCierre()
+      .then(() => cargarTipoNegocio())
+      .then(() => {
+        cargarProductos();
+        renderCarrito();
+      });
+
+    // registro de service worker (PWA)
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
         navigator.serviceWorker.register('/service-worker.js').catch(()=>{});

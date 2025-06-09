@@ -276,18 +276,20 @@
 
       if (!isOnline) {
         alert("✅ Venta registrada en modo OFFLINE.\nSe sincronizará cuando vuelva la conexión.");
+            carrito.length = 0;
+    renderCarrito();
+    cargarProductos();
+    const ventaInput = document.getElementById('busqueda');
+    ventaInput.value = '';
+    ventaInput.focus();
       }
 
       try {
         await batch.commit();
         if (isOnline) alert("✅ Venta registrada correctamente (ONLINE)");
-        carrito.length = 0;
-        renderCarrito();
-        cargarProductos();
+  
 
-           const ventaInput = document.getElementById('busqueda');
-    ventaInput.value = '';
-    ventaInput.focus();
+       
 
         if (!isOnline) {
           db.collection(`negocios/${negocioId}/ventas`).doc(refV.id)

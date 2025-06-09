@@ -288,7 +288,9 @@
         await batch.commit();
         if (isOnline) alert("✅ Venta registrada correctamente (ONLINE)");
   
-
+            carrito.length = 0;
+    renderCarrito();
+    cargarProductos();
        
 
         if (!isOnline) {

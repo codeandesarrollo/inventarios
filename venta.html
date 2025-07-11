@@ -131,6 +131,11 @@
           if (!doc.exists) continue;
           const p = doc.data();
           productosCache.push({ id: doc.id, ...p });
+
+          // --- aquí modificamos el botón para stock <= 0 ---
+          const btnDisabled = p.stock > 0 ? '' : 'disabled';
+          const btnText     = p.stock > 0 ? 'Agregar' : 'Sin stock';
+
           const div = document.createElement("div");
           div.className = "product-card";
           div.innerHTML = `
@@ -138,9 +143,9 @@
             <small>Stock: ${p.stock}</small><br>
             <small>Precio Público: $${p.precioPublico}</small><br>
             <small>Precio Neto: $${p.precioNeto}</small><br>
-            <button onclick="agregarAlCarrito(
+            <button ${btnDisabled} onclick="agregarAlCarrito(
               '${doc.id}', '${p.nombre}', ${p.precioPublico}, ${p.stock}, ${p.precioNeto}
-            )">Agregar</button>
+            )">${btnText}</button>
           `;
           cont.appendChild(div);
         }
@@ -151,14 +156,16 @@
           JSON.parse(cached).forEach(p => {
             const div = document.createElement("div");
             div.className = "product-card";
+            const btnDisabled = p.stock > 0 ? '' : 'disabled';
+            const btnText     = p.stock > 0 ? 'Agregar' : 'Sin stock';
             div.innerHTML = `
               <strong>${p.nombre}</strong><br>
               <small>Stock: ${p.stock}</small><br>
               <small>Precio Público: $${p.precioPublico}</small><br>
               <small>Precio Neto: $${p.precioNeto}</small><br>
-              <button onclick="agregarAlCarrito(
+              <button ${btnDisabled} onclick="agregarAlCarrito(
                 '${p.id}', '${p.nombre}', ${p.precioPublico}, ${p.stock}, ${p.precioNeto}
-              )">Agregar</button>
+              )">${btnText}</button>
             `;
             cont.appendChild(div);
           });
@@ -168,9 +175,13 @@
       }
     }
 
-    // --- MODIFICADO: monto en pesos para miscelánea/cremería ---
+    // --- MODIFICACIÓN: validación de stock al agregar ---
     async function agregarAlCarrito(id, nombre, precioPublico, stock, precioNeto) {
-      // determinar cantidad a agregar
+      // No permitir venta si no hay stock
+      if (stock <= 0) {
+        return alert("🚫 Sin stock disponible");
+      }
+
       let cantidadToAdd = 1;
       if (tipoNegocio === "miscelanea" || tipoNegocio === "cremeria") {
         const monto = prompt(`¿Cuántos pesos de "${nombre}" desea vender?`);
@@ -182,7 +193,6 @@
 
       let item = carrito.find(x => x.id === id);
       if (!item) {
-        // cargar promociones
         const promSnap = await db
           .collection(`negocios/${negocioId}/productos/${id}/promociones`)
           .orderBy("cantidadMinima","desc")
@@ -276,22 +286,19 @@
 
       if (!isOnline) {
         alert("✅ Venta registrada en modo OFFLINE.\nSe sincronizará cuando vuelva la conexión.");
-            carrito.length = 0;
-    renderCarrito();
-    cargarProductos();
-    const ventaInput = document.getElementById('busqueda');
-    ventaInput.value = '';
-    ventaInput.focus();
+        carrito.length = 0;
+        renderCarrito();
+        cargarProductos();
+        document.getElementById('busqueda').value = '';
+        document.getElementById('busqueda').focus();
       }
 
       try {
         await batch.commit();
         if (isOnline) alert("✅ Venta registrada correctamente (ONLINE)");
-  
-            carrito.length = 0;
-    renderCarrito();
-    cargarProductos();
-       
+        carrito.length = 0;
+        renderCarrito();
+        cargarProductos();
 
         if (!isOnline) {
           db.collection(`negocios/${negocioId}/ventas`).doc(refV.id)
@@ -321,7 +328,7 @@
         const u = v.usuario || "Desconocido";
         totalDia += v.total || 0;
         if (!ventasUsuario[u]) ventasUsuario[u] = { count: 0, total: 0 };
-        vendasPorUsuario[u].count++;
+        ventasUsuario[u].count++;
         ventasUsuario[u].total += v.total || 0;
       });
 
@@ -349,6 +356,7 @@
         if (!codigo) return;
         await buscarYAgregar(codigo);
         busquedaInput.value = '';
+        busquedaInput.focus();
       }
     });
 
@@ -364,6 +372,10 @@
         if (snap.empty) return alert('🚫 Producto no encontrado');
         const doc = snap.docs[0];
         p = { id: doc.id, ...doc.data() };
+      }
+      // --- validación de stock al buscar ---
+      if (p.stock <= 0) {
+        return alert("🚫 Producto sin stock");
       }
       agregarAlCarrito(p.id, p.nombre, p.precioPublico, p.stock, p.precioNeto);
     }
